@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/notify-slack.sh\"",
+            "statusMessage": "Notifying Josh on Slack...",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

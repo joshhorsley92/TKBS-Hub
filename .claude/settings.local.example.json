@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy this file to .claude/settings.local.json (gitignored) and paste the real Slack incoming-webhook URL. Use the SAME webhook as the TKBS CRM / Custom-Apps repos so commits land in the Slack destination Josh already watches.",
+  "env": {
+    "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/<your-team-id>/<your-webhook-id>/<your-token>"
+  }
+}
