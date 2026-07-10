@@ -17,7 +17,16 @@ export async function PATCH(
     return NextResponse.json({ error: 'status must be open|realized|cancelled' }, { status: 400 });
   }
 
-  const { error } = await auth.supabase.from('money_lines').update({ status }).eq('id', id);
+  // The anti-double-count link: realizing against a FreshBooks invoice flips
+  // the projection out of "potential" — the invoice's actual takes over.
+  const updates: Record<string, unknown> = { status };
+  if (body?.realized_by_fb_invoice_id != null) {
+    updates.realized_by_fb_invoice_id = Number(body.realized_by_fb_invoice_id);
+    updates.status = 'realized';
+  }
+  if (body?.realized_note) updates.realized_note = String(body.realized_note);
+
+  const { error } = await auth.supabase.from('money_lines').update(updates).eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

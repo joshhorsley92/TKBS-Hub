@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Panel, EmptyState } from '@/components/console/Panel';
 import { DecisionStatusControls, LineActions, NewLineForm } from '@/components/money/MoneyForms';
+import { RealizeControl, type InvoiceOption } from '@/components/money/RealizeControl';
 import { safeQuery } from '@/lib/data';
 import { logStamp, money, shortDate } from '@/lib/format';
 
@@ -59,7 +60,7 @@ export default async function DecisionDetailPage({
   );
   if (!decision) notFound();
 
-  const [lines, events] = await Promise.all([
+  const [lines, events, invoices] = await Promise.all([
     safeQuery<LineRow[]>((s) =>
       s
         .from('money_lines')
@@ -75,7 +76,19 @@ export default async function DecisionDetailPage({
         .order('created_at', { ascending: false })
         .returns<EventRow[]>(),
     ),
+    safeQuery<{ fb_id: number; number: string | null; amount: number | null; create_date: string | null }[]>((s) =>
+      s
+        .from('fb_invoices')
+        .select('fb_id, number, amount, create_date')
+        .order('create_date', { ascending: false })
+        .limit(40),
+    ),
   ]);
+
+  const invoiceOptions: InvoiceOption[] = (invoices ?? []).map((i) => ({
+    fb_id: i.fb_id,
+    label: `#${i.number ?? i.fb_id} · $${Number(i.amount ?? 0).toLocaleString()}${i.create_date ? ` · ${shortDate(i.create_date)}` : ''}`,
+  }));
 
   const open = (lines ?? []).filter((l) => l.status === 'open');
   const monthlyRev = open.filter((l) => l.direction === 'revenue' && l.cadence === 'monthly').reduce((s, l) => s + Number(l.amount) * Number(l.confidence), 0);
@@ -157,7 +170,14 @@ export default async function DecisionDetailPage({
                   </td>
                   <td className="max-w-[220px] truncate text-ink-3" title={l.memo ?? undefined}>{l.memo ?? '—'}</td>
                   <td className="text-ink-4">{l.status}</td>
-                  <td><LineActions id={l.id} /></td>
+                  <td className="whitespace-nowrap">
+                    <span className="flex items-center gap-1.5">
+                      {l.status === 'open' && l.direction === 'revenue' && (
+                        <RealizeControl lineId={l.id} invoices={invoiceOptions} />
+                      )}
+                      <LineActions id={l.id} />
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

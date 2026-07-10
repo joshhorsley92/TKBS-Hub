@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { Panel, EmptyState } from '@/components/console/Panel';
 import { Avatar } from '@/components/console/Avatar';
 import { SyncButton } from '@/components/console/SyncButton';
+import { AutoSyncKick } from '@/components/console/AutoSyncKick';
 import { safeQuery, isDbConfigured } from '@/lib/data';
-import { age, isStale, logStamp } from '@/lib/format';
+import { age, isStale, logStamp, money } from '@/lib/format';
 
 // Cockpit — status-first by design decision (2026-07-10): current state of
 // clients and internal work leads; money is a single compact line at the
@@ -31,8 +32,10 @@ const SRC_COLOR: Record<string, string> = {
   other: 'text-ink-4',
 };
 
+type PnlRow = { month: string; certainty: string; revenue: number; cost: number; net: number };
+
 export default async function CockpitPage() {
-  const [profiles, nowItems, clients, repos, log] = await Promise.all([
+  const [profiles, nowItems, clients, repos, log, pnlNow, outstanding] = await Promise.all([
     safeQuery<Profile[]>((s) => s.from('profiles').select('id, name, role').order('role')),
     safeQuery<WorkItem[]>((s) =>
       s.from('work_items').select('id, title, note, profile_id, started_at').eq('status', 'now').order('started_at', { ascending: false }),
@@ -56,12 +59,31 @@ export default async function CockpitPage() {
         .limit(9)
         .returns<LogRow[]>(),
     ),
+    safeQuery<PnlRow[]>((s) =>
+      s
+        .from('v_company_pnl_monthly')
+        .select('*')
+        .eq('month', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)),
+    ),
+    safeQuery<{ outstanding: number }[]>((s) =>
+      s.from('fb_invoices').select('outstanding').gt('outstanding', 0),
+    ),
   ]);
 
   const dbUp = isDbConfigured();
 
+  // Compact money line: real and potential never blended. Null = unknown.
+  const actualRow = pnlNow?.find((r) => r.certainty === 'actual');
+  const projRow = pnlNow?.find((r) => r.certainty === 'projected');
+  const actualNet = actualRow ? Number(actualRow.net) : null;
+  const projCost = projRow ? Number(projRow.cost) : null;
+  const projRev = projRow ? Number(projRow.revenue) : null;
+  const owed = outstanding?.length ? outstanding.reduce((s, r) => s + Number(r.outstanding), 0) : null;
+  const hasMoneyData = actualRow != null || projRow != null || owed != null;
+
   return (
     <div>
+      <AutoSyncKick />
       {/* ── Now strip: what each person is on ─────────────────────────── */}
       <div className="mb-3.5 grid grid-cols-2 gap-3">
         {(profiles && profiles.length > 0 ? profiles : [
@@ -180,10 +202,32 @@ export default async function CockpitPage() {
       {/* ── Money: one compact, honest line — detail lives on /money ───── */}
       <Link
         href="/money"
-        className="mt-3 flex items-center gap-4 rounded-console border border-edge bg-panel px-4 py-2 font-mono text-[11px] text-ink-4 transition hover:border-mint/40"
+        className="mt-3 flex items-center gap-4 overflow-x-auto rounded-console border border-edge bg-panel px-4 py-2 font-mono text-[11px] text-ink-4 transition hover:border-mint/40"
       >
         <span className="p-label">Money</span>
-        <span>not tracked yet — FreshBooks lands in Phase 2, planning ledger on /money</span>
+        {!hasMoneyData ? (
+          <span>nothing tracked yet — planning ledger on /money, actuals when FreshBooks connects</span>
+        ) : (
+          <>
+            <span className="whitespace-nowrap">
+              real net{' '}
+              {actualNet != null ? (
+                <span className={actualNet >= 0 ? 'text-actual' : 'text-danger'}>{money(actualNet)}/mo</span>
+              ) : (
+                <span className="text-ink-5">unknown (no actuals yet)</span>
+              )}
+            </span>
+            {owed != null && owed > 0 && (
+              <span className="whitespace-nowrap">outstanding <span className="text-ink-2">{money(owed)}</span></span>
+            )}
+            {projCost != null && projCost > 0 && (
+              <span className="whitespace-nowrap">planned costs <span className="text-cost">{money(projCost)}/mo</span></span>
+            )}
+            {projRev != null && projRev > 0 && (
+              <span className="whitespace-nowrap">potential <span className="text-pot">{money(projRev)}/mo wtd</span></span>
+            )}
+          </>
+        )}
         <span className="ml-auto text-ink-5">→</span>
       </Link>
     </div>
