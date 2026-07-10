@@ -332,8 +332,10 @@ create table public.work_log (
   payload      jsonb not null default '{}',
   created_at   timestamptz not null default now()
 );
-create unique index work_log_source_ext_uq on public.work_log (source, external_id)
-  where external_id is not null;
+-- Plain unique constraint (not partial): Postgres treats NULLs as distinct, so
+-- manual rows (external_id NULL) are unlimited, while automated rows dedupe on
+-- (source, external_id) — and PostgREST upserts can target it directly.
+alter table public.work_log add constraint work_log_source_ext_uq unique (source, external_id);
 create index on public.work_log (occurred_at desc);
 create index on public.work_log (actor_id, occurred_at desc);
 

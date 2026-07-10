@@ -1,27 +1,12 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import {
-  Activity,
-  CircleDollarSign,
-  FolderGit2,
-  LayoutDashboard,
-  Settings,
-  Users,
-} from 'lucide-react';
+import Link from 'next/link';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { isDbConfigured, safeQuery } from '@/lib/data';
+import { age } from '@/lib/format';
+import { RailNav } from '@/components/console/RailNav';
 import { SignOutButton } from '@/components/SignOutButton';
 
-// Provisional shell — Phase D (design direction) will replace the visual
-// treatment; the nav structure is the approved one.
-const NAV = [
-  { href: '/', label: 'Cockpit', icon: LayoutDashboard },
-  { href: '/feed', label: 'Feed', icon: Activity },
-  { href: '/repos', label: 'Repos', icon: FolderGit2 },
-  { href: '/clients', label: 'Clients', icon: Users },
-  { href: '/money', label: 'Money', icon: CircleDollarSign },
-  { href: '/settings', label: 'Settings', icon: Settings },
-];
-
+// Mission Control shell: icons-only rail + system status bar.
 export default async function AuthedLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -31,39 +16,55 @@ export default async function AuthedLayout({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('name')
-    .eq('id', user.id)
-    .single();
+  // Sync freshness for the status bar (null = unknown, rendered honestly)
+  const lastGithub = await safeQuery<{ last_synced_at: string | null }[]>((s) =>
+    s
+      .from('repos')
+      .select('last_synced_at')
+      .not('last_synced_at', 'is', null)
+      .order('last_synced_at', { ascending: false })
+      .limit(1),
+  );
+  const githubAge = lastGithub?.[0]?.last_synced_at ?? null;
+  const dbUp = isDbConfigured();
+
+  const now = new Date();
+  const stamp = now
+    .toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .toUpperCase();
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-edge bg-charcoal">
-        <div className="px-5 py-6">
-          <Link href="/" className="font-heading text-lg font-bold tracking-tight">
-            TURN<span className="text-mint">KEY</span>{' '}
-            <span className="font-normal text-ink-muted">HUB</span>
-          </Link>
-        </div>
-        <nav className="flex-1 space-y-1 px-3">
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-ink-muted transition hover:bg-surface hover:text-ink"
-            >
-              <Icon size={16} />
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <div className="border-t border-edge px-5 py-4 text-sm text-ink-muted">
-          <div className="mb-2">{profile?.name ?? user.email}</div>
+      <aside className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-edge py-3">
+        <Link href="/" aria-label="TKBS Hub home" className="mb-3 block" title="TKBS Hub">
+          {/* The key mark — circle head + shaft, Electric Mint, per Brand Guidelines */}
+          <svg width="30" height="26" viewBox="0 0 34 26" aria-hidden="true">
+            <circle cx="12" cy="13" r="9" fill="none" stroke="var(--color-mint)" strokeWidth="3" />
+            <rect x="21" y="11" width="11" height="4" fill="var(--color-mint)" />
+          </svg>
+        </Link>
+        <RailNav />
+        <div className="mt-auto">
           <SignOutButton />
         </div>
       </aside>
-      <main className="flex-1 overflow-x-hidden p-8">{children}</main>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-[18px] overflow-x-auto border-b border-edge px-[18px] py-[7px] font-mono text-[11px] text-ink-4">
+          <span className="whitespace-nowrap">TKBS HUB // CONSOLE</span>
+          {dbUp ? (
+            <span className="whitespace-nowrap text-actual">● DB CONNECTED</span>
+          ) : (
+            <span className="whitespace-nowrap text-warn">● DB NOT CONNECTED — see supabase/README</span>
+          )}
+          <span className="whitespace-nowrap">
+            GITHUB {githubAge ? age(githubAge) : '—'}
+          </span>
+          <span className="whitespace-nowrap">FRESHBOOKS —</span>
+          <span className="ml-auto whitespace-nowrap">{stamp}</span>
+        </div>
+        <main className="p-[16px_18px_22px]">{children}</main>
+      </div>
     </div>
   );
 }

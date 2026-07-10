@@ -1,43 +1,94 @@
 @import 'tailwindcss';
 
 /*
- * TKBS brand tokens — sourced from the Brand Guidelines vault note
- * (charcoal / Electric Mint, Outfit + DM Sans). Semantic surface/ink/edge
- * scales are provisional until Phase D locks the cockpit design system.
+ * TKBS-Hub — "Mission Control" console design system (Phase D, Concept A).
+ * A console, not a page: OLED near-black ground, hairline edges, square-ish
+ * corners, tabular/monospaced numerals, tables over cards. Mint is signal,
+ * never paint; amber is reserved for needs-attention.
+ * Brand: charcoal / Electric Mint, Outfit + DM Sans (Brand Guidelines).
  */
 @theme {
   /* Brand */
   --color-charcoal: #1b2838;
   --color-mint: #00d4aa;
   --color-mint-dark: #00b894;
-  --color-mint-light: #e6faf6;
 
-  /* Semantic — dark cockpit baseline (Phase D will refine) */
-  --color-surface-page: #0f1722;
-  --color-surface: #16202e;
-  --color-surface-alt: #1b2838;
+  /* Console surfaces */
+  --color-bg: #070c12;
+  --color-panel: #0a111c;
+  --color-panel-2: #0d1725;
+  --color-edge: #16222f;
+  --color-edge-2: #101a28;
+
+  /* Ink scale */
   --color-ink: #e8edf4;
-  --color-ink-muted: #93a1b5;
-  --color-ink-faint: #5c6b80;
-  --color-edge: #253449;
+  --color-ink-2: #b6c2d1;
+  --color-ink-3: #93a1b5;
+  --color-ink-4: #5c6b80;
+  --color-ink-5: #46566c;
+
+  /* Data series (CVD-validated on dark surface) + semantics */
+  --color-actual: #00a887;
+  --color-commit: #3b82f6;
+  --color-commit-2: #7fb0f9; /* readable text variant of commit blue */
+  --color-pot: #8b5cf6;
+  --color-cost: #d97706;
+  --color-warn: #ffb454;
   --color-danger: #f0546a;
-  --color-success: #00d4aa;
-  --color-warning: #ffb454;
 
   /* Type */
   --font-heading: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --radius-console: 3px;
 }
 
 body {
   font-family: var(--font-body);
-  background-color: var(--color-surface-page);
+  background-color: var(--color-bg);
   color: var(--color-ink);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-h1,
-h2,
-h3,
-h4 {
+h1, h2, h3, h4 {
   font-family: var(--font-heading);
+}
+
+/* Micro-label: the console's section eyebrow */
+.p-label {
+  font-family: var(--font-heading);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-mint) 80%, transparent);
+}
+
+/* Console data table */
+.console-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.console-table th {
+  text-align: left;
+  font-family: var(--font-heading);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ink-4);
+  padding: 0 10px 6px 0;
+  border-bottom: 1px solid var(--color-edge);
+}
+.console-table td {
+  padding: 6.5px 10px 6.5px 0;
+  border-bottom: 1px solid var(--color-edge-2);
+  color: var(--color-ink-2);
+}
+.console-table tr:last-child td {
+  border-bottom: 0;
 }
