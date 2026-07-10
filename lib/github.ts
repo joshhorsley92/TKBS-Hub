@@ -37,8 +37,11 @@ function ghHeaders(org: string, etag?: string | null): HeadersInit {
   const h: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    Authorization: `Bearer ${tokenForOrg(org)}`,
   };
+  // No token for this org → go unauthenticated (public repos still work at
+  // 60 req/hr; private ones 404 and surface as per-repo sync errors).
+  const token = tokenForOrg(org);
+  if (token) h.Authorization = `Bearer ${token}`;
   if (etag) h['If-None-Match'] = etag;
   return h;
 }
@@ -121,7 +124,10 @@ async function syncRepo(
     `${base}/commits?sha=${encodeURIComponent(branch)}&per_page=50`,
     { headers: ghHeaders(repo.org), cache: 'no-store' },
   );
-  if (!commitsRes.ok) throw new Error(`GET commits → HTTP ${commitsRes.status}`);
+  // 409 = empty repository (no commits yet) — a real state, not an error.
+  if (!commitsRes.ok && commitsRes.status !== 409) {
+    throw new Error(`GET commits → HTTP ${commitsRes.status}`);
+  }
   const commits: Array<{
     sha: string;
     html_url: string;
@@ -129,7 +135,7 @@ async function syncRepo(
       message: string;
       author: { name?: string; email?: string; date?: string };
     };
-  }> = await commitsRes.json();
+  }> = commitsRes.status === 409 ? [] : await commitsRes.json();
   stats.commits_seen += commits.length;
 
   // 3. Idempotent ingest — replayable from scratch, dupes are no-ops.
