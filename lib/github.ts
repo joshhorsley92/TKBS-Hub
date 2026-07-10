@@ -24,19 +24,29 @@ type SyncStats = {
   errors: string[];
 };
 
-function ghHeaders(etag?: string | null): HeadersInit {
+// Token resolution: fine-grained PATs are scoped to one resource owner, so a
+// per-org token (GITHUB_PAT_TKBS_SUPPORT, GITHUB_PAT_JOSHHORSLEY92) wins over
+// the generic GITHUB_PAT. A single classic PAT with `repo` scope also works
+// via GITHUB_PAT alone.
+export function tokenForOrg(org: string): string | undefined {
+  const key = `GITHUB_PAT_${org.toUpperCase().replace(/-/g, '_')}`;
+  return process.env[key] || process.env.GITHUB_PAT;
+}
+
+function ghHeaders(org: string, etag?: string | null): HeadersInit {
   const h: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    Authorization: `Bearer ${process.env.GITHUB_PAT}`,
+    Authorization: `Bearer ${tokenForOrg(org)}`,
   };
   if (etag) h['If-None-Match'] = etag;
   return h;
 }
 
 export async function syncGithub(): Promise<SyncStats> {
-  if (!process.env.GITHUB_PAT) {
-    throw new Error('GITHUB_PAT is not set — add it to .env.local');
+  const anyToken = Object.keys(process.env).some((k) => k.startsWith('GITHUB_PAT') && process.env[k]);
+  if (!anyToken) {
+    throw new Error('No GitHub token set — add GITHUB_PAT (or per-org GITHUB_PAT_*) to .env.local');
   }
 
   const supabase = createServiceRoleClient();
@@ -93,7 +103,7 @@ async function syncRepo(
   const base = `${GH}/repos/${repo.org}/${repo.name}`;
 
   // 1. Repo metadata with etag — 304 means nothing changed since last poll.
-  const metaRes = await fetch(base, { headers: ghHeaders(repo.sync_etag), cache: 'no-store' });
+  const metaRes = await fetch(base, { headers: ghHeaders(repo.org, repo.sync_etag), cache: 'no-store' });
   if (metaRes.status === 304) {
     await supabase
       .from('repos')
@@ -109,7 +119,7 @@ async function syncRepo(
   // 2. Recent commits on the default branch.
   const commitsRes = await fetch(
     `${base}/commits?sha=${encodeURIComponent(branch)}&per_page=50`,
-    { headers: ghHeaders(), cache: 'no-store' },
+    { headers: ghHeaders(repo.org), cache: 'no-store' },
   );
   if (!commitsRes.ok) throw new Error(`GET commits → HTTP ${commitsRes.status}`);
   const commits: Array<{
@@ -146,8 +156,8 @@ async function syncRepo(
 
   // 4. Open PR / issue counts (issues list includes PRs — subtract them).
   const [prsRes, issuesRes] = await Promise.all([
-    fetch(`${base}/pulls?state=open&per_page=100`, { headers: ghHeaders(), cache: 'no-store' }),
-    fetch(`${base}/issues?state=open&per_page=100`, { headers: ghHeaders(), cache: 'no-store' }),
+    fetch(`${base}/pulls?state=open&per_page=100`, { headers: ghHeaders(repo.org), cache: 'no-store' }),
+    fetch(`${base}/issues?state=open&per_page=100`, { headers: ghHeaders(repo.org), cache: 'no-store' }),
   ]);
   const prs = prsRes.ok ? ((await prsRes.json()) as unknown[]) : [];
   const issuesRaw = issuesRes.ok
