@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Panel, EmptyState } from '@/components/console/Panel';
+import { SummarizeButton } from '@/components/console/SummarizeButton';
 import { safeQuery } from '@/lib/data';
 import { age, logStamp } from '@/lib/format';
 
@@ -33,10 +34,12 @@ export default async function RepoDetailPage({
     open_pr_count: number | null;
     open_issue_count: number | null;
     sync_error: string | null;
+    work_summary: string | null;
+    work_summary_at: string | null;
   }>((s) =>
     s
       .from('repos')
-      .select('id, org, name, purpose, category, local_path, default_branch, last_synced_at, open_pr_count, open_issue_count, sync_error')
+      .select('id, org, name, purpose, category, local_path, default_branch, last_synced_at, open_pr_count, open_issue_count, sync_error, work_summary, work_summary_at')
       .eq('id', id)
       .single(),
   );
@@ -73,6 +76,25 @@ export default async function RepoDetailPage({
           <p className="mt-1 font-mono text-[11px] text-danger">sync error: {repo.sync_error}</p>
         )}
       </div>
+
+      <Panel
+        label="Current work — AI summary"
+        className="mb-3"
+        action={<SummarizeButton repoId={repo.id} />}
+      >
+        {repo.work_summary ? (
+          <div>
+            <p className="max-w-[90ch] text-[12.5px] leading-relaxed text-ink-2">{repo.work_summary}</p>
+            <p className="mt-1.5 font-mono text-[10px] text-ink-5">
+              generated {age(repo.work_summary_at)} ago from commit history — regenerate after new work lands
+            </p>
+          </div>
+        ) : (
+          <EmptyState>
+            NO SUMMARY YET — HIT AI SUMMARY TO DISTILL THE RECENT COMMITS
+          </EmptyState>
+        )}
+      </Panel>
 
       <Panel label="Commit log">
         {!commits || commits.length === 0 ? (

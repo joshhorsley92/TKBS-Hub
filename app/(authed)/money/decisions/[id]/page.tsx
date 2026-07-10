@@ -60,7 +60,7 @@ export default async function DecisionDetailPage({
   );
   if (!decision) notFound();
 
-  const [lines, events, invoices] = await Promise.all([
+  const [lines, events, invoices, profiles] = await Promise.all([
     safeQuery<LineRow[]>((s) =>
       s
         .from('money_lines')
@@ -83,6 +83,7 @@ export default async function DecisionDetailPage({
         .order('create_date', { ascending: false })
         .limit(40),
     ),
+    safeQuery<{ id: string; name: string }[]>((s) => s.from('profiles').select('id, name').order('name')),
   ]);
 
   const invoiceOptions: InvoiceOption[] = (invoices ?? []).map((i) => ({
@@ -141,7 +142,7 @@ export default async function DecisionDetailPage({
         }
       >
         <div className="mb-2.5">
-          <NewLineForm decisionId={decision.id} />
+          <NewLineForm decisionId={decision.id} profiles={profiles ?? []} />
         </div>
         {!lines || lines.length === 0 ? (
           <EmptyState>NO MONEY LINES — ADD PROJECTED REVENUE AND COSTS ABOVE</EmptyState>

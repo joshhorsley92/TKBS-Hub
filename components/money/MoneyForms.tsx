@@ -128,20 +128,34 @@ export function DecisionStatusControls({ id, status }: { id: string; status: str
   );
 }
 
-// Add a projected money line to a decision.
-export function NewLineForm({ decisionId }: { decisionId: string }) {
+// Add a projected money line to a decision. Cost lines can carry a
+// time-basis (hours/mo × rate) — that's what feeds the capacity model.
+export function NewLineForm({
+  decisionId,
+  profiles = [],
+}: {
+  decisionId: string;
+  profiles?: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const [direction, setDirection] = useState('revenue');
   const [cadence, setCadence] = useState('monthly');
   const [amount, setAmount] = useState('');
   const [confidence, setConfidence] = useState('1.0');
   const [memo, setMemo] = useState('');
+  const [hours, setHours] = useState('');
+  const [rate, setRate] = useState('');
+  const [assignee, setAssignee] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isTimeCost = direction === 'cost' && hours !== '';
+  const computedAmount = isTimeCost && rate !== '' ? Number(hours) * Number(rate) : null;
+  const effectiveAmount = computedAmount ?? (amount ? Number(amount) : null);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!amount) return;
+    if (effectiveAmount == null || !Number.isFinite(effectiveAmount)) return;
     setBusy(true);
     setError(null);
     const res = await fetch('/api/money-lines', {
@@ -151,9 +165,17 @@ export function NewLineForm({ decisionId }: { decisionId: string }) {
         decision_id: decisionId,
         direction,
         cadence,
-        amount: Number(amount),
+        amount: effectiveAmount,
         confidence: Number(confidence),
         memo: memo.trim() || null,
+        ...(isTimeCost
+          ? {
+              cost_basis: 'time',
+              hours_per_period: Number(hours),
+              hourly_rate: rate ? Number(rate) : null,
+              assignee_id: assignee || null,
+            }
+          : {}),
       }),
     });
     if (!res.ok) {
@@ -162,6 +184,8 @@ export function NewLineForm({ decisionId }: { decisionId: string }) {
     } else {
       setAmount('');
       setMemo('');
+      setHours('');
+      setRate('');
       router.refresh();
     }
     setBusy(false);
@@ -178,13 +202,43 @@ export function NewLineForm({ decisionId }: { decisionId: string }) {
         <option value="one_time">one-time</option>
       </select>
       <input
-        value={amount}
+        value={computedAmount != null ? String(computedAmount) : amount}
         onChange={(e) => setAmount(e.target.value)}
         placeholder="$ amount"
         inputMode="decimal"
-        disabled={busy}
+        disabled={busy || computedAmount != null}
+        title={computedAmount != null ? 'computed from hours × rate' : undefined}
         className={`w-[100px] ${inputCls}`}
       />
+      {direction === 'cost' && (
+        <>
+          <input
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            placeholder="hrs/mo"
+            inputMode="decimal"
+            disabled={busy}
+            title="time-basis: hours per period (feeds the capacity model)"
+            className={`w-[70px] ${inputCls}`}
+          />
+          <input
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
+            placeholder="$/hr"
+            inputMode="decimal"
+            disabled={busy}
+            className={`w-[70px] ${inputCls}`}
+          />
+          {profiles.length > 0 && hours !== '' && (
+            <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={inputCls} title="whose hours">
+              <option value="">whose hours?</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name.split(' ')[0]}</option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
       <label className="flex items-center gap-1.5 font-mono text-[10px] text-ink-4">
         CONF
         <select value={confidence} onChange={(e) => setConfidence(e.target.value)} className={inputCls}>

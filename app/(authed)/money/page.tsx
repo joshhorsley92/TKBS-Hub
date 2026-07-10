@@ -28,8 +28,10 @@ const STATUS_COLOR: Record<string, string> = {
   killed: 'text-ink-5',
 };
 
+type CapacityRow = { month: string; profile_id: string | null; kind: string; hours: number };
+
 export default async function MoneyPage() {
-  const [decisions, pnl] = await Promise.all([
+  const [decisions, pnl, capacity, capacityAssumption, profiles] = await Promise.all([
     safeQuery<DecisionPnl[]>((s) => s.from('v_decision_pnl').select('*')),
     safeQuery<PnlRow[]>((s) =>
       s
@@ -38,7 +40,31 @@ export default async function MoneyPage() {
         .gte('month', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
         .order('month'),
     ),
+    safeQuery<CapacityRow[]>((s) =>
+      s
+        .from('v_capacity_monthly')
+        .select('*')
+        .gte('month', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
+        .order('month'),
+    ),
+    safeQuery<{ value: unknown }>((s) =>
+      s.from('assumptions').select('value').eq('key', 'weekly_capacity_hours').single(),
+    ),
+    safeQuery<{ id: string; name: string }[]>((s) => s.from('profiles').select('id, name').order('name')),
   ]);
+
+  const weeklyCapacity =
+    capacityAssumption?.value != null && typeof capacityAssumption.value === 'number'
+      ? capacityAssumption.value
+      : null;
+  const monthlyCapacity = weeklyCapacity != null ? weeklyCapacity * 4.33 : null;
+  const nameOf = (id: string | null) =>
+    (profiles ?? []).find((p) => p.id === id)?.name.split(' ')[0] ?? 'unassigned';
+
+  // month → person → projected hours (next 6 months)
+  const capMonths = [...new Set((capacity ?? []).filter((c) => c.kind === 'projected').map((c) => c.month))]
+    .sort()
+    .slice(0, 6);
 
   // Chart data: next 12 months, real vs weighted-potential separated.
   const byMonth = new Map<string, PnlMonth>();
@@ -79,6 +105,65 @@ export default async function MoneyPage() {
           </EmptyState>
         ) : (
           <ProjectionChart data={chartData} />
+        )}
+      </Panel>
+
+      <Panel label="Capacity — committed hours vs the two of you" className="mb-3">
+        {capMonths.length === 0 ? (
+          <EmptyState>
+            NO TIME-COST LINES YET — ADD HRS/MO COST LINES TO COMMITTED DECISIONS AND CAPACITY APPEARS HERE
+          </EmptyState>
+        ) : (
+          <div>
+            <table className="console-table font-mono">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  {(profiles ?? []).map((p) => <th key={p.id}>{p.name.split(' ')[0]}</th>)}
+                  <th>Unassigned</th>
+                  <th>Total</th>
+                  <th>Capacity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {capMonths.map((m) => {
+                  const rows = (capacity ?? []).filter((c) => c.month === m && c.kind === 'projected');
+                  const total = rows.reduce((s, r) => s + Number(r.hours), 0);
+                  const totalCapacity = monthlyCapacity != null ? monthlyCapacity * (profiles?.length ?? 2) : null;
+                  const over = totalCapacity != null && total > totalCapacity;
+                  return (
+                    <tr key={m}>
+                      <td>{new Date(m).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</td>
+                      {(profiles ?? []).map((p) => {
+                        const h = rows.filter((r) => r.profile_id === p.id).reduce((s, r) => s + Number(r.hours), 0);
+                        const personOver = monthlyCapacity != null && h > monthlyCapacity;
+                        return (
+                          <td key={p.id} className={personOver ? 'text-danger' : undefined}>
+                            {h ? `${Math.round(h)}h` : '—'}
+                          </td>
+                        );
+                      })}
+                      <td className="text-ink-4">
+                        {(() => {
+                          const h = rows.filter((r) => !r.profile_id).reduce((s, r) => s + Number(r.hours), 0);
+                          return h ? `${Math.round(h)}h` : '—';
+                        })()}
+                      </td>
+                      <td className={over ? 'text-danger' : 'text-ink-2'}>{Math.round(total)}h</td>
+                      <td className={over ? 'text-danger' : 'text-ink-4'}>
+                        {totalCapacity != null ? `${Math.round(totalCapacity)}h${over ? ' ⚠ OVER' : ''}` : 'not set'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {monthlyCapacity == null && (
+              <p className="mt-2 font-mono text-[10.5px] text-warn">
+                ⚠ weekly_capacity_hours NOT SET — set it in Settings and the over-capacity signal (the hiring trigger) lights up
+              </p>
+            )}
+          </div>
         )}
       </Panel>
 

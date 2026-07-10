@@ -1,4 +1,5 @@
 import { Panel, EmptyState } from '@/components/console/Panel';
+import { AssumptionEditor } from '@/components/settings/AssumptionEditor';
 import { FreshbooksSyncButton } from '@/components/console/FreshbooksSyncButton';
 import { isFreshbooksConnected } from '@/lib/freshbooks';
 import { safeQuery } from '@/lib/data';
@@ -144,8 +145,8 @@ export default async function SettingsPage({
                 {assumptions.map((a) => (
                   <tr key={a.key}>
                     <td>{a.key}</td>
-                    <td className={a.value === null ? 'text-warn' : 'text-ink'}>
-                      {a.value === null ? 'NOT SET' : JSON.stringify(a.value)}
+                    <td>
+                      <AssumptionEditor assumptionKey={a.key} value={a.value} />
                     </td>
                     <td className="max-w-[260px] truncate text-ink-4" title={a.note ?? undefined}>
                       {a.note ?? '—'}
