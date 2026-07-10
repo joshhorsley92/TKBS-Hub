@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getDevUser, isAuthBypass } from '@/lib/dev-auth';
 
 export type AuthedContext = {
   userId: string;
@@ -12,6 +13,19 @@ export type AuthedContext = {
 // Usage: const auth = await requireAuth(); if (auth instanceof NextResponse) return auth;
 export async function requireAuth(): Promise<AuthedContext | NextResponse> {
   const supabase = await createServerSupabaseClient();
+
+  // DEV BYPASS: act as the configured dev user, no session needed.
+  if (isAuthBypass()) {
+    const dev = await getDevUser();
+    if (!dev) {
+      return NextResponse.json(
+        { error: 'DEV_BYPASS_AUTH is on but DEV_USER has no profile — run scripts/seed-users.mjs' },
+        { status: 500 },
+      );
+    }
+    return { userId: dev.id, name: dev.name, role: dev.role, supabase };
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

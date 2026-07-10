@@ -4,7 +4,12 @@ import { cookies } from 'next/headers';
 
 // Server-side Supabase client (user-scoped, subject to RLS). Use in Server
 // Components and route handlers acting on behalf of the logged-in user.
+// DEV BYPASS: while DEV_BYPASS_AUTH=1 (see lib/dev-auth.ts), returns the
+// service-role client instead so data access needs no session.
 export async function createServerSupabaseClient() {
+  if (process.env.DEV_BYPASS_AUTH === '1' && process.env.NODE_ENV !== 'production') {
+    return createServiceRoleClient();
+  }
   const cookieStore = await cookies();
 
   return createServerClient(

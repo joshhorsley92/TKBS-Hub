@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getDevUser, isAuthBypass } from '@/lib/dev-auth';
 import { isDbConfigured, safeQuery } from '@/lib/data';
 import { age } from '@/lib/format';
 import { RailNav } from '@/components/console/RailNav';
@@ -10,11 +11,15 @@ import { SignOutButton } from '@/components/SignOutButton';
 export default async function AuthedLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const bypass = isAuthBypass();
+  if (!bypass) {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) redirect('/login');
+  }
+  const devUser = bypass ? await getDevUser() : null;
 
   // Sync freshness for the status bar (null = unknown, rendered honestly)
   const lastGithub = await safeQuery<{ last_synced_at: string | null }[]>((s) =>
@@ -56,6 +61,11 @@ export default async function AuthedLayout({
             <span className="whitespace-nowrap text-actual">● DB CONNECTED</span>
           ) : (
             <span className="whitespace-nowrap text-warn">● DB NOT CONNECTED — see supabase/README</span>
+          )}
+          {bypass && (
+            <span className="whitespace-nowrap text-warn">
+              ⚠ AUTH BYPASS{devUser ? ` — AS ${devUser.name.split(' ')[0].toUpperCase()}` : ''}
+            </span>
           )}
           <span className="whitespace-nowrap">
             GITHUB {githubAge ? age(githubAge) : '—'}
