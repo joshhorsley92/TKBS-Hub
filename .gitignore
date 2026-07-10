@@ -1,3 +1,14 @@
 
 # Claude Code local settings (contains secrets like SLACK_WEBHOOK_URL)
 .claude/settings.local.json
+
+# Dependencies / build output
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# Env — Supabase keys, GitHub PAT, FreshBooks secrets live here, never in git
+.env
+.env.local
+.env.*.local

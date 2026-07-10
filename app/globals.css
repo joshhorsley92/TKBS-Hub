@@ -1,0 +1,43 @@
+@import 'tailwindcss';
+
+/*
+ * TKBS brand tokens — sourced from the Brand Guidelines vault note
+ * (charcoal / Electric Mint, Outfit + DM Sans). Semantic surface/ink/edge
+ * scales are provisional until Phase D locks the cockpit design system.
+ */
+@theme {
+  /* Brand */
+  --color-charcoal: #1b2838;
+  --color-mint: #00d4aa;
+  --color-mint-dark: #00b894;
+  --color-mint-light: #e6faf6;
+
+  /* Semantic — dark cockpit baseline (Phase D will refine) */
+  --color-surface-page: #0f1722;
+  --color-surface: #16202e;
+  --color-surface-alt: #1b2838;
+  --color-ink: #e8edf4;
+  --color-ink-muted: #93a1b5;
+  --color-ink-faint: #5c6b80;
+  --color-edge: #253449;
+  --color-danger: #f0546a;
+  --color-success: #00d4aa;
+  --color-warning: #ffb454;
+
+  /* Type */
+  --font-heading: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-surface-page);
+  color: var(--color-ink);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+}
