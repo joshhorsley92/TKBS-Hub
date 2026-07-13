@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, RotateCcw, Square, X } from 'lucide-react';
+import { ChevronRight, Maximize2, Minimize2, RotateCcw, Square, X } from 'lucide-react';
 
 // The always-visible Claude command line — remote control for the headless
 // Claude Code running on this machine (subscription-billed, never API).
-// SAFE mode: edits + read tools + git status/log/diff. FULL mode: everything
-// (--dangerously-skip-permissions) — the same trust as a VS Code session.
+// Output is a 5-line ticker that auto-follows the action; expand for the
+// full transcript. SAFE mode: edits + read tools + git status/log/diff.
+// FULL mode: everything (--dangerously-skip-permissions).
 
 type Entry =
   | { kind: 'cmd'; text: string }
@@ -16,16 +17,35 @@ type Entry =
   | { kind: 'done'; ms: number }
   | { kind: 'error'; text: string };
 
+// 5 lines × ~18px line-height
+const COMPACT_H = 92;
+
 export function ClaudeBar() {
   const router = useRouter();
   const [prompt, setPrompt] = useState('');
   const [mode, setMode] = useState<'safe' | 'full'>('safe');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pinnedRef = useRef(true); // auto-follow unless the user scrolls up
+
+  const stickToBottom = useCallback(() => {
+    if (!pinnedRef.current) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  useEffect(stickToBottom, [entries, expanded, stickToBottom]);
+
+  function onScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  }
 
   const push = useCallback((e: Entry) => {
     setEntries((prev) => {
@@ -36,9 +56,6 @@ export function ClaudeBar() {
       }
       return [...prev, e];
     });
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-    });
   }, []);
 
   async function run(e: React.FormEvent) {
@@ -48,6 +65,7 @@ export function ClaudeBar() {
     setPrompt('');
     setBusy(true);
     setOpen(true);
+    pinnedRef.current = true;
     push({ kind: 'cmd', text: p });
 
     const controller = new AbortController();
@@ -92,86 +110,112 @@ export function ClaudeBar() {
         }
       }
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        push({ kind: 'error', text: (err as Error).message });
-      } else {
-        push({ kind: 'error', text: 'stopped' });
-      }
+      push({
+        kind: 'error',
+        text: (err as Error).name === 'AbortError' ? 'stopped' : (err as Error).message,
+      });
     } finally {
       setBusy(false);
       abortRef.current = null;
     }
   }
 
-  function stop() {
-    abortRef.current?.abort();
-  }
-
-  function newSession() {
-    setSessionId(null);
-    setEntries([]);
-  }
+  // Compact view shows the tail; expanded shows everything.
+  const visible = expanded ? entries : entries.slice(-40);
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-edge bg-panel/95 backdrop-blur">
-      {open && (
+      {open && entries.length > 0 && (
         <div className="border-b border-edge-2">
-          <div className="flex items-center justify-between px-4 pt-2">
-            <span className="p-label">Claude — this machine, this repo, subscription-billed</span>
-            <span className="flex items-center gap-3">
-              {sessionId && (
-                <button onClick={newSession} title="start a fresh session" className="flex cursor-pointer items-center gap-1 font-mono text-[10px] text-ink-4 transition hover:text-ink-2">
-                  <RotateCcw size={10} /> NEW SESSION
+          <div className="flex items-center justify-between px-4 pt-1.5 pb-0.5">
+            <span className="p-label truncate">
+              Claude — this machine, this repo{busy ? ' · working…' : ''}
+            </span>
+            <span className="flex shrink-0 items-center gap-3">
+              {sessionId && !busy && (
+                <button
+                  onClick={() => {
+                    setSessionId(null);
+                    setEntries([]);
+                  }}
+                  title="start a fresh session"
+                  className="flex cursor-pointer items-center gap-1 font-mono text-[9.5px] text-ink-4 transition hover:text-ink-2"
+                >
+                  <RotateCcw size={10} /> NEW
                 </button>
               )}
-              <button onClick={() => setOpen(false)} title="collapse" className="cursor-pointer text-ink-4 transition hover:text-ink-2">
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                title={expanded ? 'collapse to 5 lines' : 'expand transcript'}
+                className="cursor-pointer text-ink-4 transition hover:text-mint"
+              >
+                {expanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                title="hide output"
+                className="cursor-pointer text-ink-4 transition hover:text-ink-2"
+              >
                 <X size={13} />
               </button>
             </span>
           </div>
-          <div ref={scrollRef} className="max-h-[38vh] overflow-y-auto px-4 py-2 font-mono text-[11.5px]">
-            {entries.map((en, i) => {
+
+          <div
+            ref={scrollRef}
+            onScroll={onScroll}
+            className="overflow-y-auto px-4 pb-1.5 font-mono text-[11px] leading-[18px]"
+            style={{ height: expanded ? '46vh' : COMPACT_H }}
+          >
+            {visible.map((en, i) => {
               if (en.kind === 'cmd') {
                 return (
-                  <div key={i} className="mt-2 flex gap-2 text-mint first:mt-0">
-                    <span>▸</span>
-                    <span className="text-ink">{en.text}</span>
+                  <div key={i} className="flex gap-1.5 text-mint">
+                    <span className="shrink-0">▸</span>
+                    <span className={`text-ink ${expanded ? '' : 'truncate'}`}>{en.text}</span>
                   </div>
                 );
               }
               if (en.kind === 'tool') {
                 return (
-                  <div key={i} className="pl-4 text-[10.5px] text-ink-5">
-                    ⚙ {en.name} <span className="text-ink-5/70">{en.detail}</span>
+                  <div key={i} className="flex gap-1.5 truncate pl-3 text-[10.5px] text-ink-5">
+                    <span className="shrink-0 text-ink-4">⚙</span>
+                    <span className="shrink-0">{en.name}</span>
+                    <span className="truncate opacity-70">{en.detail}</span>
                   </div>
                 );
               }
               if (en.kind === 'text') {
                 return (
-                  <div key={i} className="whitespace-pre-wrap pl-4 leading-relaxed text-ink-2">
-                    {en.text}
+                  <div
+                    key={i}
+                    className={`pl-3 text-ink-2 ${expanded ? 'whitespace-pre-wrap' : 'truncate'}`}
+                    title={expanded ? undefined : en.text}
+                  >
+                    {expanded ? en.text : en.text.replace(/\s+/g, ' ').trim()}
                   </div>
                 );
               }
               if (en.kind === 'done') {
                 return (
-                  <div key={i} className="pl-4 text-[10px] text-ink-5">
+                  <div key={i} className="pl-3 text-[10px] text-actual">
                     ● done in {(en.ms / 1000).toFixed(1)}s
+                    {!expanded && ' — expand ⤢ to read the full answer'}
                   </div>
                 );
               }
               return (
-                <div key={i} className="pl-4 text-danger">
+                <div key={i} className={`pl-3 text-danger ${expanded ? '' : 'truncate'}`}>
                   {en.text}
                 </div>
               );
             })}
-            {busy && <div className="pl-4 text-[10.5px] text-warn">⋯ working</div>}
+            {busy && <div className="pl-3 text-[10.5px] text-warn">⋯</div>}
           </div>
         </div>
       )}
 
-      <form onSubmit={run} className="flex items-center gap-2.5 px-4 py-2">
+      <form onSubmit={run} className="flex items-center gap-2.5 px-4 py-1.5">
         <ChevronRight size={14} className={busy ? 'animate-pulse text-warn' : 'text-mint'} />
         <input
           value={prompt}
@@ -181,15 +225,33 @@ export function ClaudeBar() {
           disabled={busy}
           className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-ink outline-none placeholder:text-ink-5"
         />
+        {!open && entries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="cursor-pointer font-mono text-[9.5px] tracking-wider text-ink-5 transition hover:text-ink-2"
+          >
+            SHOW OUTPUT
+          </button>
+        )}
         {busy ? (
-          <button type="button" onClick={stop} title="stop" className="flex cursor-pointer items-center gap-1 rounded-console border border-edge px-2 py-0.5 font-mono text-[10px] tracking-wider text-danger transition hover:border-danger">
+          <button
+            type="button"
+            onClick={() => abortRef.current?.abort()}
+            title="stop"
+            className="flex cursor-pointer items-center gap-1 rounded-console border border-edge px-2 py-0.5 font-mono text-[10px] tracking-wider text-danger transition hover:border-danger"
+          >
             <Square size={9} /> STOP
           </button>
         ) : (
           <button
             type="button"
             onClick={() => setMode(mode === 'safe' ? 'full' : 'safe')}
-            title={mode === 'safe' ? 'SAFE: edits + read tools + git status. Click for FULL (all permissions).' : 'FULL: no permission checks — same trust as your VS Code session. Click for SAFE.'}
+            title={
+              mode === 'safe'
+                ? 'SAFE: edits + read tools + git status. Click for FULL (all permissions).'
+                : 'FULL: no permission checks — same trust as your VS Code session. Click for SAFE.'
+            }
             className={`cursor-pointer rounded-console border px-2 py-0.5 font-mono text-[10px] tracking-wider transition ${
               mode === 'safe' ? 'border-edge text-ink-4 hover:text-ink-2' : 'border-warn/50 text-warn'
             }`}
@@ -197,7 +259,11 @@ export function ClaudeBar() {
             {mode === 'safe' ? 'SAFE' : '⚠ FULL'}
           </button>
         )}
-        {sessionId && <span title="following up in the same session" className="font-mono text-[9px] text-ink-5">◆ session</span>}
+        {sessionId && (
+          <span title="following up in the same session" className="shrink-0 font-mono text-[9px] text-ink-5">
+            ◆
+          </span>
+        )}
       </form>
     </div>
   );

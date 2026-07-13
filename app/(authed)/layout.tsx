@@ -74,7 +74,8 @@ export default async function AuthedLayout({
           <span className="whitespace-nowrap">FRESHBOOKS —</span>
           <span className="ml-auto whitespace-nowrap">{stamp}</span>
         </div>
-        <main className="p-[16px_18px_70px]">{children}</main>
+        {/* bottom padding clears the fixed ClaudeBar (input + 5-line ticker) */}
+        <main className="p-[16px_18px_140px]">{children}</main>
       </div>
       <ClaudeBar />
     </div>
