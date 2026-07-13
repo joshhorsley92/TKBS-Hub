@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getDevUser, isAuthBypass } from '@/lib/dev-auth';
 import { isDbConfigured, safeQuery } from '@/lib/data';
 import { age } from '@/lib/format';
+import { ClaudeBar } from '@/components/console/ClaudeBar';
 import { RailNav } from '@/components/console/RailNav';
 import { SignOutButton } from '@/components/SignOutButton';
 
@@ -73,8 +74,9 @@ export default async function AuthedLayout({
           <span className="whitespace-nowrap">FRESHBOOKS —</span>
           <span className="ml-auto whitespace-nowrap">{stamp}</span>
         </div>
-        <main className="p-[16px_18px_22px]">{children}</main>
+        <main className="p-[16px_18px_70px]">{children}</main>
       </div>
+      <ClaudeBar />
     </div>
   );
 }
