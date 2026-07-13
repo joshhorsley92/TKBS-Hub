@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserSupabaseClient } from '@/lib/supabase/browser';
+import { BRAND_MARK } from '@/components/broadsheet/icons';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,59 +30,54 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="font-heading text-3xl font-bold tracking-tight">
-            TURN<span className="text-mint">KEY</span>{' '}
-            <span className="font-normal text-ink-muted">HUB</span>
-          </h1>
-          <p className="mt-2 text-sm text-ink-muted">Your Growth, Unlocked</p>
+    <main style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 360 }}>
+        <div className="brand" style={{ justifyContent: 'center', padding: '0 0 26px' }}>
+          {BRAND_MARK}
+          <div className="wm" style={{ fontSize: 20 }}>
+            TKBS<span>.</span>
+          </div>
         </div>
 
-        <form
-          onSubmit={onSubmit}
-          className="space-y-4 rounded-xl border border-edge bg-surface p-6"
-        >
-          <div>
-            <label htmlFor="email" className="mb-1 block text-sm text-ink-muted">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-edge bg-surface-alt px-3 py-2 text-ink outline-none focus:border-mint"
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="mb-1 block text-sm text-ink-muted">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-edge bg-surface-alt px-3 py-2 text-ink outline-none focus:border-mint"
-            />
-          </div>
+        <form onSubmit={onSubmit} className="card pad" style={{ padding: '24px 26px' }}>
+          <label className="fl" htmlFor="email" style={{ marginTop: 0 }}>
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            className="inp full"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
 
-          {error && <p className="text-sm text-danger">{error}</p>}
+          <label className="fl" htmlFor="password">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            className="inp full"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-lg bg-mint px-4 py-2 font-heading font-semibold text-charcoal transition hover:bg-mint-dark disabled:opacity-50"
-          >
+          {error && (
+            <p style={{ color: 'var(--danger)', fontSize: 12.5, marginTop: 10 }}>{error}</p>
+          )}
+
+          <button type="submit" className="btn mint" disabled={busy} style={{ width: '100%', marginTop: 18 }}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <p style={{ fontSize: 11.5, color: 'var(--ink-4)', textAlign: 'center', marginTop: 14 }}>
+          Internal hub · Joe &amp; Josh only
+        </p>
       </div>
     </main>
   );

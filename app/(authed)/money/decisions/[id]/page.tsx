@@ -1,211 +1,346 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { Panel, EmptyState } from '@/components/console/Panel';
-import { DecisionStatusControls, LineActions, NewLineForm } from '@/components/money/MoneyForms';
-import { RealizeControl, type InvoiceOption } from '@/components/money/RealizeControl';
 import { safeQuery } from '@/lib/data';
-import { logStamp, money, shortDate } from '@/lib/format';
+import { getPeople } from '@/lib/board';
+import { DASH, fmtY, money } from '@/lib/broadsheet';
+import { Avatar, Chip } from '@/components/broadsheet/primitives';
+import {
+  DecisionStatusControls,
+  DeleteLineButton,
+  NewMoneyLineForm,
+  RealizeControl,
+} from '@/components/broadsheet/money/MoneyForms';
+
+export const dynamic = 'force-dynamic';
+
+// A decision, rendered as a report — "the case" for doing the thing, with the
+// money attached to it. Projected revenue and cost come from its money lines;
+// either can legitimately be unknown, and then the net is unknown too. We do not
+// treat a missing cost as a free decision.
+
+type Embed<T> = T | T[] | null;
+const one = <T,>(v: Embed<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
+
+type DecisionRow = {
+  id: string;
+  title: string;
+  summary: string | null;
+  kind: string;
+  status: string;
+  proposed_by: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  client_id: string | null;
+  venture_id: string | null;
+  clients: Embed<{ id: string; name: string; industry: string | null }>;
+  ventures: Embed<{ id: string; name: string }>;
+};
 
 type LineRow = {
   id: string;
-  direction: string;
-  cadence: string;
-  amount: number;
-  confidence: number;
+  direction: 'revenue' | 'cost';
+  cadence: 'one_time' | 'monthly';
+  amount: string;
+  confidence: string;
   status: string;
+  memo: string | null;
   occurs_on: string | null;
   starts_on: string | null;
-  ends_on: string | null;
-  category: string;
-  memo: string | null;
 };
 
-type EventRow = {
-  id: number;
-  from_status: string | null;
-  to_status: string;
-  note: string | null;
-  created_at: string;
-  profiles: { name: string } | null;
+const KIND_LABEL: Record<string, string> = {
+  client_deal: 'client deal',
+  product: 'product',
+  service_line: 'service line',
+  internal_tooling: 'internal tooling',
+  pricing: 'pricing',
+  hire: 'hire',
+  other: 'other',
 };
 
-export default async function DecisionDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+const kindTone = (k: string) =>
+  k === 'product' ? 'violet' : k === 'client_deal' ? 'blue' : k === 'service_line' ? 'mint' : '';
+
+export default async function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const decision = await safeQuery<{
-    id: string;
-    title: string;
-    summary: string | null;
-    kind: string;
-    status: string;
-    created_at: string;
-    decided_at: string | null;
-    proposer: { name: string } | null;
-    decider: { name: string } | null;
-    clients: { id: string; name: string } | null;
-    ventures: { name: string } | null;
-  }>((s) =>
-    s
-      .from('decisions')
-      .select(
-        'id, title, summary, kind, status, created_at, decided_at, proposer:proposed_by (name), decider:decided_by (name), clients:client_id (id, name), ventures:venture_id (name)',
-      )
-      .eq('id', id)
-      .single(),
-  );
-  if (!decision) notFound();
-
-  const [lines, events, invoices, profiles] = await Promise.all([
+  const [rows, lineRows, events, invoices, people] = await Promise.all([
+    safeQuery<DecisionRow[]>((s) =>
+      s
+        .from('decisions')
+        .select(
+          'id, title, summary, kind, status, proposed_by, decided_by, decided_at, created_at, client_id, venture_id, clients:client_id(id, name, industry), ventures:venture_id(id, name)',
+        )
+        .eq('id', id)
+        .limit(1),
+    ),
     safeQuery<LineRow[]>((s) =>
       s
         .from('money_lines')
-        .select('id, direction, cadence, amount, confidence, status, occurs_on, starts_on, ends_on, category, memo')
+        .select('id, direction, cadence, amount, confidence, status, memo, occurs_on, starts_on')
         .eq('decision_id', id)
         .order('created_at'),
     ),
-    safeQuery<EventRow[]>((s) =>
-      s
-        .from('decision_events')
-        .select('id, from_status, to_status, note, created_at, profiles:actor_id (name)')
-        .eq('decision_id', id)
-        .order('created_at', { ascending: false })
-        .returns<EventRow[]>(),
+    safeQuery<{ id: number; from_status: string | null; to_status: string; note: string | null; created_at: string; actor_id: string | null }[]>(
+      (s) =>
+        s
+          .from('decision_events')
+          .select('id, from_status, to_status, note, created_at, actor_id')
+          .eq('decision_id', id)
+          .order('created_at', { ascending: false }),
     ),
-    safeQuery<{ fb_id: number; number: string | null; amount: number | null; create_date: string | null }[]>((s) =>
-      s
-        .from('fb_invoices')
-        .select('fb_id, number, amount, create_date')
-        .order('create_date', { ascending: false })
-        .limit(40),
+    // Realization targets. FreshBooks isn't connected, so this is empty — and
+    // the realize control says so rather than offering a dead dropdown.
+    safeQuery<{ fb_id: number; number: string | null }[]>((s) =>
+      s.from('fb_invoices').select('fb_id, number').order('create_date', { ascending: false }).limit(40),
     ),
-    safeQuery<{ id: string; name: string }[]>((s) => s.from('profiles').select('id, name').order('name')),
+    getPeople(),
   ]);
 
-  const invoiceOptions: InvoiceOption[] = (invoices ?? []).map((i) => ({
-    fb_id: i.fb_id,
-    label: `#${i.number ?? i.fb_id} · $${Number(i.amount ?? 0).toLocaleString()}${i.create_date ? ` · ${shortDate(i.create_date)}` : ''}`,
-  }));
+  const d = rows?.[0];
+  if (!d) notFound();
 
-  const open = (lines ?? []).filter((l) => l.status === 'open');
-  const monthlyRev = open.filter((l) => l.direction === 'revenue' && l.cadence === 'monthly').reduce((s, l) => s + Number(l.amount) * Number(l.confidence), 0);
-  const monthlyCost = open.filter((l) => l.direction === 'cost' && l.cadence === 'monthly').reduce((s, l) => s + Number(l.amount) * Number(l.confidence), 0);
-  const oneTimeRev = open.filter((l) => l.direction === 'revenue' && l.cadence === 'one_time').reduce((s, l) => s + Number(l.amount) * Number(l.confidence), 0);
-  const oneTimeCost = open.filter((l) => l.direction === 'cost' && l.cadence === 'one_time').reduce((s, l) => s + Number(l.amount) * Number(l.confidence), 0);
+  const lines = lineRows ?? [];
+  const open = lines.filter((l) => l.status === 'open');
+
+  // Sum only what exists. No lines of a kind → unknown, not zero.
+  const sum = (dir: 'revenue' | 'cost'): number | null => {
+    const mine = open.filter((l) => l.direction === dir);
+    return mine.length ? mine.reduce((s, l) => s + (Number(l.amount) || 0), 0) : null;
+  };
+  const projRev = sum('revenue');
+  const projCost = sum('cost');
+  const net = projRev !== null && projCost !== null ? projRev - projCost : null;
+
+  // If every open line is monthly, the figures are per-month.
+  const allMonthly = open.length > 0 && open.every((l) => l.cadence === 'monthly');
+  const sfx = allMonthly ? '/mo' : '';
+
+  const client = one(d.clients);
+  const venture = one(d.ventures);
+  const proposer = people?.byId[d.proposed_by];
 
   return (
-    <div>
-      <Link href="/money" className="mb-3 flex w-fit items-center gap-1.5 font-mono text-[11px] text-ink-4 transition hover:text-ink-2">
-        <ArrowLeft size={12} /> MONEY
+    <>
+      <Link href="/money" className="backlink">
+        ← Money
       </Link>
 
-      <div className="mb-3">
-        <h1 className="text-lg font-bold">{decision.title}</h1>
-        <p className="font-mono text-[11px] text-ink-4">
-          {decision.kind.replace(/_/g, ' ')} · proposed by {decision.proposer?.name ?? '—'} {shortDate(decision.created_at)}
-          {decision.decider ? ` · decided by ${decision.decider.name}${decision.decided_at ? ` ${shortDate(decision.decided_at)}` : ''}` : ' · not yet decided'}
-          {decision.clients ? (
-            <> · <Link href={`/clients/${decision.clients.id}`} className="transition hover:text-mint">{decision.clients.name}</Link></>
-          ) : null}
-          {decision.ventures ? ` · ${decision.ventures.name}` : null}
-        </p>
-        {decision.summary && <p className="mt-1 max-w-[90ch] text-[12.5px] text-ink-3">{decision.summary}</p>}
+      <div className="topline">
+        <div>
+          <div className="kicker">
+            <Chip tone={kindTone(d.kind) as 'violet' | 'blue' | 'mint' | ''}>
+              {KIND_LABEL[d.kind] ?? d.kind}
+            </Chip>
+            <span className="stat" style={{ marginLeft: 8 }}>
+              {d.status}
+            </span>
+          </div>
+          <h1 className="h1" style={{ maxWidth: '20ch' }}>
+            {d.title}
+          </h1>
+        </div>
+        <div className="stamp">
+          <div
+            style={{
+              fontFamily: 'var(--disp)',
+              fontWeight: 700,
+              fontSize: 22,
+              color: net === null ? 'var(--ink-4)' : net >= 0 ? 'var(--mint-ink)' : 'var(--danger)',
+            }}
+          >
+            {net === null ? DASH : `${net >= 0 ? '+' : ''}${money(net)}${sfx}`}
+          </div>
+          <div style={{ marginTop: 4 }}>projected net</div>
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            <Avatar person={proposer} />
+          </div>
+        </div>
       </div>
 
-      <Panel className="mb-3">
-        <DecisionStatusControls id={decision.id} status={decision.status} />
-      </Panel>
-
-      <Panel
-        label="Projected P&L (confidence-weighted)"
-        className="mb-3"
-        action={
-          <span className="font-mono text-[11px] text-ink-3">
-            {monthlyRev || monthlyCost ? (
-              <>
-                <span className={monthlyRev - monthlyCost >= 0 ? 'text-actual' : 'text-danger'}>
-                  {money(monthlyRev - monthlyCost)}/mo
-                </span>
-                {' · '}
-              </>
-            ) : null}
-            {oneTimeRev || oneTimeCost ? (
-              <span className={oneTimeRev - oneTimeCost >= 0 ? 'text-actual' : 'text-danger'}>
-                {money(oneTimeRev - oneTimeCost)} one-time
-              </span>
-            ) : null}
-          </span>
-        }
-      >
-        <div className="mb-2.5">
-          <NewLineForm decisionId={decision.id} profiles={profiles ?? []} />
+      <div className="grid3" style={{ marginTop: 6 }}>
+        <div className="card pad">
+          <div className="eyebrow">Projected revenue</div>
+          <div className={`bignum${projRev === null ? ' unk' : ''}`}>
+            {money(projRev)}
+            {projRev !== null && sfx}
+          </div>
+          <div className="smol">{projRev === null ? 'no revenue line yet' : `${open.filter((l) => l.direction === 'revenue').length} open line(s)`}</div>
         </div>
-        {!lines || lines.length === 0 ? (
-          <EmptyState>NO MONEY LINES — ADD PROJECTED REVENUE AND COSTS ABOVE</EmptyState>
+        <div className="card pad">
+          <div className="eyebrow">Projected cost</div>
+          <div className={`bignum${projCost === null ? ' unk' : ''}`}>
+            {money(projCost)}
+            {projCost !== null && sfx}
+          </div>
+          <div className="smol">
+            {projCost === null ? 'no cost line — that is unknown, not free' : `${open.filter((l) => l.direction === 'cost').length} open line(s)`}
+          </div>
+        </div>
+        <div className="card pad">
+          <div className="eyebrow">Projected net</div>
+          <div
+            className={`bignum${net === null ? ' unk' : ''}`}
+            style={net !== null ? { color: net >= 0 ? 'var(--mint-ink)' : 'var(--danger)' } : undefined}
+          >
+            {net === null ? DASH : `${net >= 0 ? '+' : ''}${money(net)}${sfx}`}
+          </div>
+          <div className="smol">
+            {proposer ? `proposed by ${proposer.first}` : ''}
+            {d.created_at ? ` · ${fmtY(d.created_at)}` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div className="shead">
+        <h3>Status</h3>
+      </div>
+      <div className="card pad">
+        <DecisionStatusControls id={d.id} status={d.status} />
+        {d.decided_by && d.decided_at && (
+          <p style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 12 }}>
+            Decided by {people?.byId[d.decided_by]?.first ?? 'someone'} on {fmtY(d.decided_at)}.
+          </p>
+        )}
+      </div>
+
+      <div className="shead">
+        <h3>The case</h3>
+      </div>
+      <div className="card pad digest-card">
+        <div className="digest" style={{ whiteSpace: 'pre-wrap' }}>
+          {d.summary ?? (
+            <span className="unk">
+              No rationale written yet. A decision without a case is just an expense — write down why
+              this is worth doing.
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="shead">
+        <h3>Money lines</h3>
+        <span className="sample">projected · realize against a FreshBooks invoice</span>
+      </div>
+      <div className="card pad">
+        {lines.length === 0 ? (
+          <div className="empty-inline">
+            No money lines yet. Add one below and it joins the six-month projection.
+          </div>
         ) : (
-          <table className="console-table font-mono">
+          <table className="ledger">
             <thead>
               <tr>
-                <th>Dir</th><th>Cadence</th><th>Amount</th><th>Conf</th><th>Window</th><th>Memo</th><th>Status</th><th></th>
+                <th>Memo</th>
+                <th>Direction</th>
+                <th>Cadence</th>
+                <th className="num">Amount</th>
+                <th className="num">Confidence</th>
+                <th>Status</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {lines.map((l) => (
-                <tr key={l.id} className={l.status !== 'open' ? 'opacity-50' : undefined}>
-                  <td className={l.direction === 'revenue' ? 'text-actual' : 'text-cost'}>
-                    {l.direction === 'revenue' ? 'REV' : 'COST'}
+                <tr key={l.id}>
+                  <td style={{ fontWeight: 500 }}>{l.memo ?? <span className="unk">—</span>}</td>
+                  <td style={{ color: 'var(--ink-3)' }}>{l.direction}</td>
+                  <td style={{ color: 'var(--ink-3)' }}>{l.cadence === 'monthly' ? 'monthly' : 'one-time'}</td>
+                  <td className={`num ${l.direction === 'revenue' ? 'pos' : 'neg'}`}>
+                    {money(Number(l.amount))}
+                    {l.cadence === 'monthly' ? '/mo' : ''}
                   </td>
-                  <td className="text-ink-4">{l.cadence === 'monthly' ? '/mo' : 'once'}</td>
-                  <td>{money(Number(l.amount))}</td>
-                  <td className={Number(l.confidence) < 1 ? 'text-pot' : 'text-ink-4'}>
+                  <td className="num" style={{ color: 'var(--ink-4)' }}>
                     {Math.round(Number(l.confidence) * 100)}%
                   </td>
-                  <td className="text-ink-4">
-                    {l.cadence === 'one_time'
-                      ? l.occurs_on ? shortDate(l.occurs_on) : '—'
-                      : `${l.starts_on ? shortDate(l.starts_on) : '—'} → ${l.ends_on ? shortDate(l.ends_on) : 'open'}`}
-                  </td>
-                  <td className="max-w-[220px] truncate text-ink-3" title={l.memo ?? undefined}>{l.memo ?? '—'}</td>
-                  <td className="text-ink-4">{l.status}</td>
-                  <td className="whitespace-nowrap">
-                    <span className="flex items-center gap-1.5">
-                      {l.status === 'open' && l.direction === 'revenue' && (
-                        <RealizeControl lineId={l.id} invoices={invoiceOptions} />
-                      )}
-                      <LineActions id={l.id} />
+                  <td>
+                    <span
+                      className="stat"
+                      style={{
+                        color:
+                          l.status === 'realized'
+                            ? 'var(--mint-ink)'
+                            : l.status === 'cancelled'
+                              ? 'var(--ink-4)'
+                              : 'var(--blue)',
+                      }}
+                    >
+                      {l.status}
                     </span>
+                  </td>
+                  <td style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    {l.status === 'open' && (
+                      <>
+                        <RealizeControl lineId={l.id} invoices={invoices ?? []} />
+                        <DeleteLineButton lineId={l.id} />
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </Panel>
 
-      <Panel label="Lifecycle">
-        {!events || events.length === 0 ? (
-          <EmptyState>NO EVENTS</EmptyState>
-        ) : (
-          <div className="font-mono">
-            {events.map((e) => (
-              <div key={e.id} className="flex items-baseline gap-2.5 border-b border-edge-2 py-[5.5px] text-[11.5px] last:border-b-0">
-                <span className="w-[42px] shrink-0 text-ink-5">{logStamp(e.created_at)}</span>
-                <span className="min-w-0 flex-1 text-ink-2">
-                  {e.from_status ? `${e.from_status} → ` : ''}<span className="text-ink">{e.to_status}</span>
-                  {e.note ? <span className="text-ink-4"> — {e.note}</span> : null}
-                </span>
-                <span className={`shrink-0 text-[10px] ${e.profiles?.name?.startsWith('Josh') ? 'text-commit-2' : 'text-mint'}`}>
-                  {(e.profiles?.name ?? '').split(' ')[0].toUpperCase()}
-                </span>
-              </div>
-            ))}
+        <NewMoneyLineForm decisionId={d.id} clientId={d.client_id} ventureId={d.venture_id} />
+      </div>
+
+      {(client || venture) && (
+        <>
+          <div className="shead">
+            <h3>Linked</h3>
           </div>
-        )}
-      </Panel>
-    </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {client && (
+              <Link href={`/clients/${client.id}`} className="linkcard" style={{ minWidth: 260 }}>
+                <div className="eyebrow">Client</div>
+                <b style={{ fontFamily: 'var(--disp)', fontSize: 14, display: 'block', marginTop: 5 }}>
+                  {client.name}
+                </b>
+                {client.industry && (
+                  <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{client.industry}</p>
+                )}
+              </Link>
+            )}
+            {venture && (
+              <Link href={`/builds/${venture.id}`} className="linkcard" style={{ minWidth: 260 }}>
+                <div className="eyebrow">Build</div>
+                <b style={{ fontFamily: 'var(--disp)', fontSize: 14, display: 'block', marginTop: 5 }}>
+                  {venture.name}
+                </b>
+              </Link>
+            )}
+          </div>
+        </>
+      )}
+
+      {events && events.length > 0 && (
+        <>
+          <div className="shead">
+            <h3>Lifecycle</h3>
+          </div>
+          <div className="card pad">
+            <div className="river">
+              {events.map((e) => (
+                <div key={e.id} className="ev">
+                  <span className="node2" style={{ background: 'var(--ink)' }} />
+                  <span className="t">{fmtY(e.created_at)}</span>
+                  <div className="body">
+                    <b>
+                      {e.from_status ? `${e.from_status} → ${e.to_status}` : `created as ${e.to_status}`}
+                    </b>
+                    {e.note && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3 }}>{e.note}</div>}
+                    <div className="meta">
+                      <Avatar person={e.actor_id ? people?.byId[e.actor_id] : null} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }

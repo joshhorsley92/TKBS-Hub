@@ -1,88 +1,103 @@
 import Link from 'next/link';
-import { Panel, EmptyState } from '@/components/console/Panel';
-import { NewClientForm } from '@/components/clients/ClientControls';
-import { safeQuery, isDbConfigured } from '@/lib/data';
-import { age } from '@/lib/format';
 
-type ClientRow = {
-  id: string;
-  name: string;
-  stage: string;
-  health: string | null;
-  industry: string | null;
-  website: string | null;
-  updated_at: string;
+import { getClients, getMoney, getPeople } from '@/lib/board';
+import { Chip, EmptyState, LifeLine, MoneyTrio } from '@/components/broadsheet/primitives';
+import { AddClientButton } from '@/components/broadsheet/clients/ClientForms';
+
+export const dynamic = 'force-dynamic';
+
+// The roster.
+//
+// One card per client, each one carrying its whole relationship as a life-line.
+// Everything on the card is read from the record: the stage and health a human
+// set, the contact and industry they typed, the commits in that client's repos,
+// and the money — which is currently unknown for everyone, because FreshBooks
+// isn't connected. An unknown reads as an em dash, never as zero.
+
+type Tone = 'mint' | 'amber' | 'blue' | 'violet' | '';
+
+const STAGE_TONE: Record<string, Tone> = {
+  active: 'mint',
+  proposal: 'violet',
+  discovery: 'blue',
+  paused: 'amber',
 };
 
-const STAGE_ORDER = ['active', 'proposal', 'discovery', 'prospect', 'paused', 'past'];
-const STAGE_COLOR: Record<string, string> = {
-  prospect: 'text-ink-4',
-  discovery: 'text-commit-2',
-  proposal: 'text-commit-2',
-  active: 'text-actual',
-  paused: 'text-warn',
-  past: 'text-ink-5',
+// Reading order is by commitment, not alphabet: the people paying us now sit
+// above the people who might. getClients() already sorts by name, so within a
+// stage the order stays alphabetical.
+const STAGE_RANK = ['active', 'proposal', 'discovery', 'prospect', 'paused', 'past'];
+const rankOf = (stage: string) => {
+  const i = STAGE_RANK.indexOf(stage);
+  return i === -1 ? STAGE_RANK.length : i;
 };
 
 export default async function ClientsPage() {
-  const clients = await safeQuery<ClientRow[]>((s) =>
-    s.from('clients').select('id, name, stage, health, industry, website, updated_at'),
-  );
+  const [clients, people, money] = await Promise.all([getClients(), getPeople(), getMoney()]);
 
-  const sorted = (clients ?? []).sort(
-    (a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage),
-  );
+  // The layout blocks rendering when profiles are missing, so this is only a
+  // type guard — an unresolvable actor id simply shows no avatar.
+  const peopleById = people?.byId ?? {};
+  const roster = [...clients].sort((a, b) => rankOf(a.stage) - rankOf(b.stage));
 
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
+    <>
+      <div className="topline">
         <div>
-          <h1 className="text-lg font-bold">Clients</h1>
-          <p className="font-mono text-[11px] text-ink-4">
-            {clients ? `${clients.length} total · ${clients.filter((c) => c.stage === 'active').length} active` : 'status board'}
-          </p>
+          <h1 className="h1">Clients</h1>
         </div>
-        <NewClientForm />
+        <AddClientButton />
       </div>
 
-      <Panel label="Client status board">
-        {!clients || clients.length === 0 ? (
-          <EmptyState>{isDbConfigured() ? 'NO CLIENTS YET' : 'DB NOT CONNECTED'}</EmptyState>
-        ) : (
-          <table className="console-table font-mono">
-            <thead>
-              <tr>
-                <th>Client</th><th>Stage</th><th>Health</th><th>Industry</th><th>Touched</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <Link href={`/clients/${c.id}`} className="text-ink transition hover:text-mint">
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className={STAGE_COLOR[c.stage] ?? ''}>{c.stage.toUpperCase()}</td>
-                  <td>
-                    {c.health ? (
-                      <span className={c.health === 'green' ? 'text-actual' : c.health === 'yellow' ? 'text-warn' : 'text-danger'}>
-                        ● {c.health}
-                      </span>
-                    ) : (
-                      <span className="text-ink-5">not set</span>
-                    )}
-                  </td>
-                  <td className="max-w-[280px] truncate text-ink-4" title={c.industry ?? undefined}>
-                    {c.industry ?? '—'}
-                  </td>
-                  <td className="text-ink-4">{age(c.updated_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Panel>
-    </div>
+      {roster.length === 0 ? (
+        <EmptyState title="No clients on the board." action={<AddClientButton />}>
+          Add the first one and its life-line starts the same day. From then on the card fills itself
+          in from what actually happens — notes logged here, commits in the repos linked to them, and
+          invoices once FreshBooks is connected.
+        </EmptyState>
+      ) : (
+        <div style={{ marginTop: 14 }}>
+          {roster.map((c) => {
+            // Both are optional columns. Saying which are missing beats printing
+            // a row of dashes, and beats guessing either one.
+            const wo = [c.contactName, c.industry].filter(Boolean).join(' · ');
+
+            return (
+              <Link
+                key={c.id}
+                href={`/clients/${c.id}`}
+                className="card clientcard"
+                style={{ display: 'block', color: 'var(--ink)' }}
+              >
+                <div className="life">
+                  <div className="life-top">
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span className="nm">{c.name}</span>
+                        {c.health && (
+                          <Chip tone={c.health === 'green' ? 'mint' : 'amber'}>
+                            <span className="pd" />
+                            {c.health}
+                          </Chip>
+                        )}
+                        <Chip tone={STAGE_TONE[c.stage] ?? ''}>{c.stage}</Chip>
+                      </div>
+                      <div className="wo">{wo || 'No contact or industry recorded'}</div>
+                    </div>
+                    <MoneyTrio
+                      revenue={c.money.revenueActual}
+                      cost={c.money.costActual}
+                      potential={c.money.potentialMonthly}
+                      freshbooksConnected={money.freshbooksConnected}
+                    />
+                  </div>
+                  <LifeLine events={c.line} peopleById={peopleById} />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }

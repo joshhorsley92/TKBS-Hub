@@ -3,12 +3,13 @@ import { exchangeCode } from '@/lib/freshbooks';
 
 // GET /api/freshbooks/callback?code= — OAuth redirect target. Exchanges the
 // code, stores tokens + account/business ids (service role), sends the user
-// back to Settings. Public route (the consent redirect has no session), but
-// useless without a valid one-time code from FreshBooks.
+// back to Connections (which absorbed the old Settings page). Public route (the
+// consent redirect has no session), but useless without a valid one-time code
+// from FreshBooks.
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
-  const backTo = new URL('/settings', url.origin);
+  const backTo = new URL('/connections', url.origin);
 
   if (!code) {
     backTo.searchParams.set('fb', 'error');

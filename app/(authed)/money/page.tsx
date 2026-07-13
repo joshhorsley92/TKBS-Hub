@@ -1,209 +1,314 @@
 import Link from 'next/link';
-import { Panel, EmptyState } from '@/components/console/Panel';
-import { NewDecisionForm } from '@/components/money/MoneyForms';
-import { ProjectionChart, type PnlMonth } from '@/components/charts/ProjectionChart';
-import { safeQuery, isDbConfigured } from '@/lib/data';
-import { money } from '@/lib/format';
+import { getClients, getMoney } from '@/lib/board';
+import { safeQuery } from '@/lib/data';
+import { DASH, money } from '@/lib/broadsheet';
+import { Bars, Chip, EmptyState } from '@/components/broadsheet/primitives';
+import { ProposeDecisionButton } from '@/components/broadsheet/money/MoneyForms';
 
-type DecisionPnl = {
-  id: string;
-  title: string;
-  status: string;
-  kind: string;
-  projected_revenue: number | null;
-  projected_cost: number | null;
-  actual_revenue_to_date: number | null;
-  actual_cost_to_date: number | null;
+export const dynamic = 'force-dynamic';
+
+// Money — real-data-first, and honest about which parts aren't real yet.
+//
+// The two rules this page exists to enforce:
+//   * Actual and potential are NEVER blended. Actual revenue comes from
+//     FreshBooks; potential comes from open planning lines. They stack in the
+//     chart but never sum into a single headline.
+//   * A missing figure is unknown, not zero. FreshBooks isn't connected, so
+//     every "actual" reads "—", which is the truth. Rendering $0 would claim we
+//     know we earned nothing.
+
+const KIND_LABEL: Record<string, string> = {
+  client_deal: 'client deal',
+  product: 'product',
+  service_line: 'service line',
+  internal_tooling: 'internal tooling',
+  pricing: 'pricing',
+  hire: 'hire',
+  other: 'other',
 };
 
-type PnlRow = { month: string; certainty: string; revenue: number; cost: number; net: number };
-
-const STATUS_ORDER = ['active', 'committed', 'evaluating', 'idea', 'done', 'killed'];
-const STATUS_COLOR: Record<string, string> = {
-  idea: 'text-ink-4',
-  evaluating: 'text-pot',
-  committed: 'text-commit-2',
-  active: 'text-actual',
-  done: 'text-ink-3',
-  killed: 'text-ink-5',
-};
-
-type CapacityRow = { month: string; profile_id: string | null; kind: string; hours: number };
+const statusColor = (s: string) =>
+  s === 'active'
+    ? 'var(--mint-ink)'
+    : s === 'committed'
+      ? 'var(--blue)'
+      : s === 'evaluating'
+        ? 'var(--violet)'
+        : s === 'killed'
+          ? 'var(--danger)'
+          : 'var(--ink-4)';
 
 export default async function MoneyPage() {
-  const [decisions, pnl, capacity, capacityAssumption, profiles] = await Promise.all([
-    safeQuery<DecisionPnl[]>((s) => s.from('v_decision_pnl').select('*')),
-    safeQuery<PnlRow[]>((s) =>
-      s
-        .from('v_company_pnl_monthly')
-        .select('*')
-        .gte('month', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
-        .order('month'),
-    ),
-    safeQuery<CapacityRow[]>((s) =>
-      s
-        .from('v_capacity_monthly')
-        .select('*')
-        .gte('month', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
-        .order('month'),
-    ),
-    safeQuery<{ value: unknown }>((s) =>
-      s.from('assumptions').select('value').eq('key', 'weekly_capacity_hours').single(),
-    ),
-    safeQuery<{ id: string; name: string }[]>((s) => s.from('profiles').select('id, name').order('name')),
+  const [board, clients, ventures] = await Promise.all([
+    getMoney(),
+    getClients(),
+    safeQuery<{ id: string; name: string }[]>((s) => s.from('ventures').select('id, name').order('name')),
   ]);
 
-  const weeklyCapacity =
-    capacityAssumption?.value != null && typeof capacityAssumption.value === 'number'
-      ? capacityAssumption.value
+  const bars = board.months.map((m) => ({
+    month: m.month,
+    actual: m.revenueActual,
+    potential: m.revenuePotential,
+  }));
+  const nothingProjected = bars.every((m) => m.actual + m.potential === 0);
+
+  // Only sum what's actually known. With no FreshBooks revenue in, the total is
+  // unknown — not zero.
+  const known = (k: 'revenueActual' | 'costActual' | 'potentialMonthly'): number | null => {
+    const vals = clients.map((c) => c.money[k]).filter((v): v is number => v !== null);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) : null;
+  };
+  const totalRevenue = known('revenueActual');
+  const totalCost = known('costActual');
+  const totalPotential = known('potentialMonthly');
+
+  // Net is only meaningful when both sides are known.
+  const net =
+    board.signedMonthly !== null && board.monthlySpend !== null
+      ? board.signedMonthly - board.monthlySpend
       : null;
-  const monthlyCapacity = weeklyCapacity != null ? weeklyCapacity * 4.33 : null;
-  const nameOf = (id: string | null) =>
-    (profiles ?? []).find((p) => p.id === id)?.name.split(' ')[0] ?? 'unassigned';
 
-  // month → person → projected hours (next 6 months)
-  const capMonths = [...new Set((capacity ?? []).filter((c) => c.kind === 'projected').map((c) => c.month))]
-    .sort()
-    .slice(0, 6);
-
-  // Chart data: next 12 months, real vs weighted-potential separated.
-  const byMonth = new Map<string, PnlMonth>();
-  for (const r of pnl ?? []) {
-    const key = new Date(r.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-    const row = byMonth.get(key) ?? { month: key, actual_revenue: 0, projected_revenue: 0, cost: 0 };
-    if (r.certainty === 'actual') row.actual_revenue += Number(r.revenue);
-    else row.projected_revenue += Number(r.revenue);
-    row.cost += Number(r.cost);
-    byMonth.set(key, row);
-  }
-  const chartData = [...byMonth.values()].slice(0, 12);
-
-  const sorted = (decisions ?? []).sort(
-    (a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status),
-  );
-
-  const openDecisions = sorted.filter((d) => !['done', 'killed'].includes(d.status));
+  const roster = clients.filter((c) => c.stage !== 'past');
 
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
+    <>
+      <div className="topline">
         <div>
-          <h1 className="text-lg font-bold">Money</h1>
-          <p className="font-mono text-[11px] text-ink-4">
-            planning ledger — FreshBooks actuals land in Phase 2 · real and potential never blended
-          </p>
+          <h1 className="h1">Money</h1>
         </div>
-        <NewDecisionForm />
+        <ProposeDecisionButton
+          clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+          ventures={ventures ?? []}
+        />
       </div>
 
-      <Panel label="12-month projection" className="mb-3">
-        {chartData.length === 0 ? (
-          <EmptyState>
-            {isDbConfigured()
-              ? 'NO MONEY LINES YET — PROPOSE A DECISION AND ADD PROJECTED LINES'
-              : 'DB NOT CONNECTED'}
-          </EmptyState>
-        ) : (
-          <ProjectionChart data={chartData} />
-        )}
-      </Panel>
+      {/* ── projection ─────────────────────────────────────────────────── */}
+      <div className="card pad" style={{ marginTop: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+          <div className="eyebrow">6-month projection</div>
+          {board.freshbooksConnected ? (
+            <Chip tone="mint">
+              <span className="pd" />
+              FreshBooks connected
+            </Chip>
+          ) : (
+            <Chip tone="amber">
+              <span className="pd" />
+              FreshBooks not connected
+            </Chip>
+          )}
+        </div>
 
-      <Panel label="Capacity — committed hours vs the two of you" className="mb-3">
-        {capMonths.length === 0 ? (
-          <EmptyState>
-            NO TIME-COST LINES YET — ADD HRS/MO COST LINES TO COMMITTED DECISIONS AND CAPACITY APPEARS HERE
-          </EmptyState>
-        ) : (
-          <div>
-            <table className="console-table font-mono">
-              <thead>
-                <tr>
-                  <th>Month</th>
-                  {(profiles ?? []).map((p) => <th key={p.id}>{p.name.split(' ')[0]}</th>)}
-                  <th>Unassigned</th>
-                  <th>Total</th>
-                  <th>Capacity</th>
-                </tr>
-              </thead>
-              <tbody>
-                {capMonths.map((m) => {
-                  const rows = (capacity ?? []).filter((c) => c.month === m && c.kind === 'projected');
-                  const total = rows.reduce((s, r) => s + Number(r.hours), 0);
-                  const totalCapacity = monthlyCapacity != null ? monthlyCapacity * (profiles?.length ?? 2) : null;
-                  const over = totalCapacity != null && total > totalCapacity;
-                  return (
-                    <tr key={m}>
-                      <td>{new Date(m).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</td>
-                      {(profiles ?? []).map((p) => {
-                        const h = rows.filter((r) => r.profile_id === p.id).reduce((s, r) => s + Number(r.hours), 0);
-                        const personOver = monthlyCapacity != null && h > monthlyCapacity;
-                        return (
-                          <td key={p.id} className={personOver ? 'text-danger' : undefined}>
-                            {h ? `${Math.round(h)}h` : '—'}
-                          </td>
-                        );
-                      })}
-                      <td className="text-ink-4">
-                        {(() => {
-                          const h = rows.filter((r) => !r.profile_id).reduce((s, r) => s + Number(r.hours), 0);
-                          return h ? `${Math.round(h)}h` : '—';
-                        })()}
-                      </td>
-                      <td className={over ? 'text-danger' : 'text-ink-2'}>{Math.round(total)}h</td>
-                      <td className={over ? 'text-danger' : 'text-ink-4'}>
-                        {totalCapacity != null ? `${Math.round(totalCapacity)}h${over ? ' ⚠ OVER' : ''}` : 'not set'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {monthlyCapacity == null && (
-              <p className="mt-2 font-mono text-[10.5px] text-warn">
-                ⚠ weekly_capacity_hours NOT SET — set it in Settings and the over-capacity signal (the hiring trigger) lights up
-              </p>
-            )}
+        {nothingProjected ? (
+          <div style={{ marginTop: 16 }}>
+            <EmptyState title="Nothing is on the books.">
+              There are no money lines in the planning ledger, and FreshBooks isn’t connected — so
+              there is no revenue to project and no actuals to draw. These are empty months, not zero
+              months. Propose a decision to put the first line on the board.
+            </EmptyState>
           </div>
-        )}
-      </Panel>
-
-      <Panel label="Decisions">
-        {openDecisions.length === 0 && sorted.length === 0 ? (
-          <EmptyState>NO DECISIONS PROPOSED YET</EmptyState>
         ) : (
-          <table className="console-table font-mono">
+          <>
+            <div style={{ marginTop: 18 }}>
+              <Bars data={bars} height={120} />
+            </div>
+            <div style={{ display: 'flex', gap: 16, marginTop: 14 }}>
+              <span className="chip">
+                <span className="pd" style={{ background: 'var(--ink)' }} />
+                Actual · FreshBooks
+              </span>
+              <span className="chip mint">
+                <span className="pd" />
+                Projected · weighted by confidence
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── per-client ─────────────────────────────────────────────────── */}
+      <div className="shead">
+        <h3>Revenue · cost · potential</h3>
+        <span className="sample">
+          {board.freshbooksConnected ? 'lifetime by client' : 'unknown until FreshBooks is connected'}
+        </span>
+      </div>
+      <div className="card pad">
+        {roster.length === 0 ? (
+          <div className="empty-inline">No clients on the roster.</div>
+        ) : (
+          <table className="ledger">
             <thead>
               <tr>
-                <th>Decision</th><th>Kind</th><th>Status</th>
-                <th>Proj rev</th><th>Proj cost</th><th>Net (proj)</th>
+                <th>Client</th>
+                <th className="num">Revenue · lifetime</th>
+                <th className="num">Cost</th>
+                <th className="num">Potential</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((d) => {
-                const pr = Number(d.projected_revenue ?? 0);
-                const pc = Number(d.projected_cost ?? 0);
-                const net = pr - pc;
+              {roster.map((c) => (
+                <tr key={c.id} className="clk">
+                  <td style={{ fontWeight: 500 }}>
+                    <Link href={`/clients/${c.id}`}>{c.name}</Link>
+                  </td>
+                  <td className={`num ${c.money.revenueActual === null ? 'unk' : 'pos'}`}>
+                    {money(c.money.revenueActual)}
+                  </td>
+                  <td className="num unk">{money(c.money.costActual)}</td>
+                  <td
+                    className="num"
+                    style={c.money.potentialMonthly !== null ? { color: 'var(--mint-ink)' } : undefined}
+                  >
+                    {c.money.potentialMonthly === null ? DASH : `${money(c.money.potentialMonthly)}/mo`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td style={{ fontFamily: 'var(--disp)' }}>Total</td>
+                <td className={`num ${totalRevenue === null ? 'unk' : 'pos'}`}>{money(totalRevenue)}</td>
+                <td className="num unk">{money(totalCost)}</td>
+                <td className="num" style={totalPotential !== null ? { color: 'var(--mint-ink)' } : undefined}>
+                  {totalPotential === null ? DASH : `${money(totalPotential)}/mo`}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+      </div>
+
+      {/* ── costs ──────────────────────────────────────────────────────── */}
+      <div className="shead">
+        <h3>Infrastructure &amp; operating costs</h3>
+        <span className="sample">from the planning ledger</span>
+      </div>
+
+      <div className="grid3" style={{ marginBottom: 14 }}>
+        <div className="card pad">
+          <div className="eyebrow">Invested in infrastructure</div>
+          <div className={`bignum${board.investedOneTime === null ? ' unk' : ''}`}>
+            {money(board.investedOneTime)}
+          </div>
+          <div className="smol">one-time costs booked to date</div>
+        </div>
+        <div className="card pad">
+          <div className="eyebrow">Monthly spend rate</div>
+          <div className={`bignum${board.monthlySpend === null ? ' unk' : ''}`}>
+            {money(board.monthlySpend)}
+            {board.monthlySpend !== null && (
+              <span style={{ fontSize: 14, color: 'var(--ink-4)', fontWeight: 400 }}>/mo</span>
+            )}
+          </div>
+          <div className="smol">
+            {board.monthlySpend === null
+              ? 'no recurring costs entered'
+              : `${money(board.monthlySpend * 12)} annualized`}
+          </div>
+        </div>
+        <div className="card pad">
+          <div className="eyebrow">Net monthly</div>
+          <div
+            className={`bignum${net === null ? ' unk' : ''}`}
+            style={net !== null ? { color: net >= 0 ? 'var(--mint-ink)' : 'var(--danger)' } : undefined}
+          >
+            {net === null ? DASH : `${net >= 0 ? '+' : ''}${money(net)}`}
+            {net !== null && <span style={{ fontSize: 14, color: 'var(--ink-4)', fontWeight: 400 }}>/mo</span>}
+          </div>
+          <div className="smol">
+            {net === null ? 'needs both recurring revenue and spend' : 'recurring revenue − monthly spend'}
+          </div>
+        </div>
+      </div>
+
+      <div className="card pad">
+        {board.costs.length === 0 ? (
+          <div className="empty-inline">
+            No cost lines entered. Hosting, tooling and subscriptions land here once someone books
+            them — or automatically, once FreshBooks expenses sync.
+          </div>
+        ) : (
+          <table className="ledger">
+            <thead>
+              <tr>
+                <th>Line item</th>
+                <th>Category</th>
+                <th className="num">Invested</th>
+                <th className="num">Monthly</th>
+              </tr>
+            </thead>
+            <tbody>
+              {board.costs.map((c) => (
+                <tr key={c.id}>
+                  <td style={{ fontWeight: 500 }}>{c.memo ?? <span className="unk">Untitled line</span>}</td>
+                  <td style={{ color: 'var(--ink-3)' }}>{c.category}</td>
+                  <td className="num" style={{ color: c.cadence === 'one_time' ? 'var(--ink)' : 'var(--ink-4)' }}>
+                    {c.cadence === 'one_time' ? money(c.amount) : DASH}
+                  </td>
+                  <td className="num" style={{ color: c.cadence === 'monthly' ? 'var(--danger)' : 'var(--ink-4)' }}>
+                    {c.cadence === 'monthly' ? `${money(c.amount)}/mo` : DASH}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── decisions ──────────────────────────────────────────────────── */}
+      <div className="shead">
+        <h3>Decisions</h3>
+        <span className="sample">the projection ledger</span>
+      </div>
+      <div className="card pad">
+        {board.decisions.length === 0 ? (
+          <EmptyState title="No decisions proposed yet.">
+            A decision is the case for doing something — what it costs, what it should bring in, and
+            why. It is the unit this board projects from. Propose one and it becomes a line in the
+            forecast above.
+          </EmptyState>
+        ) : (
+          <table className="ledger">
+            <thead>
+              <tr>
+                <th>Decision</th>
+                <th>Kind</th>
+                <th>Status</th>
+                <th className="num">Proj. rev</th>
+                <th className="num">Proj. cost</th>
+                <th className="num">Proj. net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {board.decisions.map((d) => {
+                const hasBoth = d.projectedRevenue !== null && d.projectedCost !== null;
+                const dNet = hasBoth ? d.projectedRevenue! - d.projectedCost! : null;
                 return (
-                  <tr key={d.id}>
+                  <tr key={d.id} className="clk">
+                    <td style={{ fontWeight: 500 }}>
+                      <Link href={`/money/decisions/${d.id}`}>{d.title}</Link>
+                    </td>
+                    <td style={{ color: 'var(--ink-3)' }}>{KIND_LABEL[d.kind] ?? d.kind}</td>
                     <td>
-                      <Link href={`/money/decisions/${d.id}`} className="text-ink transition hover:text-mint">
-                        {d.title}
-                      </Link>
+                      <span className="stat" style={{ color: statusColor(d.status) }}>
+                        {d.status}
+                      </span>
                     </td>
-                    <td className="text-ink-4">{d.kind.replace(/_/g, ' ')}</td>
-                    <td className={STATUS_COLOR[d.status] ?? ''}>{d.status.toUpperCase()}</td>
-                    <td>{pr ? money(pr) : '—'}</td>
-                    <td>{pc ? money(pc) : '—'}</td>
-                    <td className={net > 0 ? 'text-actual' : net < 0 ? 'text-danger' : 'text-ink-4'}>
-                      {pr || pc ? money(net) : '—'}
+                    <td className={`num${d.projectedRevenue === null ? ' unk' : ''}`}>
+                      {money(d.projectedRevenue)}
                     </td>
+                    <td className={`num${d.projectedCost === null ? ' unk' : ''}`} style={{ color: 'var(--ink-4)' }}>
+                      {money(d.projectedCost)}
+                    </td>
+                    <td className={`num ${dNet === null ? 'unk' : dNet >= 0 ? 'pos' : 'neg'}`}>{money(dNet)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         )}
-      </Panel>
-    </div>
+      </div>
+    </>
   );
 }
