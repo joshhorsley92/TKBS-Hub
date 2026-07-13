@@ -155,10 +155,12 @@ reads the session's own prompts and *names* a client — as a **suggestion** wit
 one-click confirm on the Time page. Nothing is booked to a client on a guess, and
 a name that isn't on the real client list is discarded.
 
-**How long** — the clock runs across the conversation. Any gap longer than 15
-minutes between Claude's last output and your next input is excluded. A long
-agentic run counts in full, on purpose: the hour is real, and so is what Claude
-burned during it.
+**How long** — the clock runs across the conversation, and any gap longer than 15
+minutes is excluded. A long agentic run still counts in full, on purpose: the
+hour is real, and so is what Claude burned during it. That needs no exception —
+Claude emits continuously while it works, so a genuine hour-long run is hundreds
+of consecutive short gaps, not one long one. A 15-minute silence only ever means
+nobody was there: you walked away, or Claude was parked on a permission prompt.
 
 **What it costs** — three figures, and two of them are real:
 

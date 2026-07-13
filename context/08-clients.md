@@ -3,6 +3,70 @@
 Named clients/partners found in the sources. Some are active engagements, one is
 a launch partner, and one is a fictional reference deal — labeled accordingly.
 
+> **The four below the fold were missing until 2026-07-13.** This file — and the
+> Creative Pipeline's `dashboard/clients.json` — only ever knew Geek Mystique,
+> Astro Paws, Foundations and Clothing Cove, because those are the clients that
+> pass through the *Creative Pipeline*. The rest of TKBS's delivered work lives in
+> repos nobody wrote down: Honest Mortgage, Sunsy, RMD and Champion Gasket were
+> all reconstructed from commit history. That gap had teeth — the Hub's time
+> tracker asks Claude "which client was this session for?" and offers this list to
+> choose from, so **158 of 166 tracked hours came back unattributed**: the clients
+> the work was *for* weren't on the list. Add new clients here when you win them.
+
+## Honest Mortgage — active (website build, Jul 2026)
+
+- **Business:** mortgage brokerage. Domain and contact are **not recorded in any
+  repo** — ask Josh.
+- **Engagement:** full website build — adaptive apply funnel, live rate board with
+  a compliance reframe, refinance calculator, partner/careers pages, reviews
+  carousel, and a site-wide "de-AI" copy pass.
+- **Evidence:** repo `Honest-Mortgage-Website` (+ a second, `Honest-Mortgage`).
+  **44 commits by Josh, 2026-07-02 → 2026-07-11** — by commit volume, the most
+  active client engagement TKBS currently has.
+
+## Sunsy (Derek Antosiek) — active (paid engagement)
+
+- **Client:** **Derek Antosiek** — blog *Optimize Your Biology*
+  (optimizeyourbiology.com), co-founder of **Sunsy** (sunsy.co, circadian
+  lighting).
+- **Engagement:** a content pipeline that turns a product into a near-publishable
+  review in Derek's voice and exact template, plus Klaviyo welcome flows.
+- **Evidence:** `Sunsy-Content-Pipeline/CLAUDE.md` calls it *"a paid TKBS client
+  engagement"*. Repos: `Sunsy-Content-Pipeline` (21 commits),
+  `Sunsy-Klaviyo-Welcome-Flows` (2, Josh).
+- **Confirm:** that repo's ROADMAP frames the current phase as *"a sales demo to
+  win Derek's agreement,"* with production work deferred *"only after Derek signs
+  off."* So *something* is paid for, but the scope needs pinning down.
+
+## RMD Jewelry — active (Klaviyo + SEO/AEO)
+
+- **Business:** handcrafted jewelry e-commerce (rmdjewelry.com; "Rachel Marie
+  Designs"). Also **stocked by Clothing Cove**, which is plausibly how the
+  relationship came about.
+- **Engagement:** Klaviyo integration (repo `RMD-Klaviyo-Integration`, Josh,
+  2026-07-01) and a full ecommerce SEO/AEO audit.
+
+## Champion Gasket & Rubber — stage unconfirmed (website shipped Apr 2026)
+
+- **Business:** ISO 9001:2015-certified custom die-cut manufacturer (gaskets,
+  seals, shims, pads) in **Walled Lake, MI**. 248-624-6140. Founded 1970.
+- **Engagement:** a complete multi-page site (about, quality, products,
+  industries, request-a-quote), built and hosted in `Web-Hosting/champion-gasket`,
+  committed by **Josh on 2026-04-20**.
+- **Confirm:** the site is the *only* record — no note, no roster entry, no CRM
+  row. Nothing on file says whether the engagement is ongoing or finished.
+
+## Grady's Garden — inbound lead (visibility done, ads staged)
+
+- **Business:** garden center, Howell MI (gradysgarden.com,
+  info@gradysgarden.com).
+- **Engagement:** visibility audit complete (SEO 75.8 / AEO 62.7 / GEO 55.4 —
+  branded-strong but category-invisible); a 2×2 A/B ad plan (4 ads) is staged,
+  renders pending.
+- **Why it matters:** *"Flipped cold → inbound client lead (2026-06-26)"* — TKBS's
+  one genuine cold-outreach-to-client conversion, and therefore the proof the
+  Creative Pipeline works end to end.
+
 ## Geek Mystique — active (planning/pricing phase, Apr 2026)
 
 - **Client:** Thomas Covert, **Board Game Revolution (BGR)**, Michigan.
