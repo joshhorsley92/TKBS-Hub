@@ -1031,7 +1031,14 @@ export const getConnections = cache(getConnectionsUncached);
 export type TimeSession = {
   id: string;
   source: string;
-  profileId: string;
+  /** NULL when we could not identify who did the work. Never guessed. */
+  profileId: string | null;
+  /** What we saw but couldn't resolve — e.g. an unmapped git email. */
+  actorRaw: string | null;
+  /** Which client this LOOKS like it was for. A suggestion, never an attribution. */
+  suggestedClientId: string | null;
+  suggestedClientName: string | null;
+  suggestedReason: string | null;
   clientId: string | null;
   clientName: string | null;
   ventureId: string | null;
@@ -1060,24 +1067,28 @@ export type TimeBoard = {
   /** This month's real cash, split pro-rata by tokens. NULL without the above. */
   allocatedThisMonth: number | null;
   unattributed: number;
+  /** Sessions where we don't know WHO did the work. Nothing is guessed. */
+  unidentified: number;
 };
 
 const getTimeUncached = async (): Promise<TimeBoard> => {
   const [rows, sub, monthly] = await Promise.all([
     safeQuery<
       {
-        id: string; source: string; profile_id: string; client_id: string | null;
+        id: string; source: string; profile_id: string | null; client_id: string | null;
         venture_id: string | null; started_at: string; worked_hours: string;
         idle_seconds: number; model: string | null; total_tokens: string;
         imputed_cost: string | null; labour_cost: string | null; summary: string | null;
-        cwd: string | null;
+        cwd: string | null; actor_raw: string | null;
+        suggested_client_id: string | null; suggested_reason: string | null;
         clients: Embed<{ name: string }>; ventures: Embed<{ name: string }>; repos: Embed<{ name: string }>;
+        suggested: Embed<{ name: string }>;
       }[]
     >((s) =>
       s
         .from('v_time_session_cost')
         .select(
-          'id, source, profile_id, client_id, venture_id, started_at, worked_hours, idle_seconds, model, total_tokens, imputed_cost, labour_cost, summary, cwd, clients:client_id(name), ventures:venture_id(name), repos:repo_id(name)',
+          'id, source, profile_id, actor_raw, client_id, venture_id, suggested_client_id, suggested_reason, started_at, worked_hours, idle_seconds, model, total_tokens, imputed_cost, labour_cost, summary, cwd, clients:client_id(name), ventures:venture_id(name), repos:repo_id(name), suggested:suggested_client_id(name)',
         )
         .order('started_at', { ascending: false })
         .limit(100),
@@ -1094,6 +1105,10 @@ const getTimeUncached = async (): Promise<TimeBoard> => {
     id: r.id,
     source: r.source,
     profileId: r.profile_id,
+    actorRaw: r.actor_raw,
+    suggestedClientId: r.suggested_client_id,
+    suggestedClientName: one(r.suggested)?.name ?? null,
+    suggestedReason: r.suggested_reason,
     clientId: r.client_id,
     clientName: one(r.clients)?.name ?? null,
     ventureId: r.venture_id,
@@ -1127,6 +1142,7 @@ const getTimeUncached = async (): Promise<TimeBoard> => {
     subscriptionMonthly: Number.isFinite(subscription) ? subscription : null,
     allocatedThisMonth: sum((monthly ?? []).map((m) => numOrNull(m.allocated_cost))),
     unattributed: sessions.filter((s) => !s.clientId && !s.ventureId).length,
+    unidentified: sessions.filter((s) => !s.profileId).length,
   };
 };
 

@@ -16,10 +16,14 @@ type Option = { id: string; name: string };
  */
 export function AssignSession({
   sessionId,
+  suggestion,
   clients,
   ventures,
 }: {
   sessionId: string;
+  /** What the work LOOKS like it was for, read from the session's own prompts.
+   *  Offered for one-click confirmation — never applied on its own. */
+  suggestion: { id: string; name: string } | null;
   clients: Option[];
   ventures: Option[];
 }) {
@@ -27,18 +31,17 @@ export function AssignSession({
   const toast = useToast();
   const [busy, setBusy] = useState(false);
 
-  async function assign(value: string) {
-    if (!value || busy) return;
-    const [kind, id] = value.split(':');
+  async function apply(body: Record<string, string>, label: string) {
+    if (busy) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/time/${sessionId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(kind === 'client' ? { client_id: id } : { venture_id: id }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
-        toast('Session attributed');
+        toast(`Attributed to ${label}`);
         router.refresh();
       } else {
         toast('Couldn’t attribute that session');
@@ -48,35 +51,58 @@ export function AssignSession({
     }
   }
 
+  async function assign(value: string) {
+    if (!value) return;
+    const [kind, id] = value.split(':');
+    const name =
+      (kind === 'client' ? clients : ventures).find((o) => o.id === id)?.name ?? 'that';
+    await apply(kind === 'client' ? { client_id: id } : { venture_id: id }, name);
+  }
+
   return (
-    <select
-      className="inp"
-      style={{ fontSize: 12, padding: '5px 8px' }}
-      disabled={busy}
-      defaultValue=""
-      aria-label="Attribute this session to a client or build"
-      onChange={(e) => void assign(e.target.value)}
-    >
-      <option value="">Assign…</option>
-      {clients.length > 0 && (
-        <optgroup label="Clients">
-          {clients.map((c) => (
-            <option key={c.id} value={`client:${c.id}`}>
-              {c.name}
-            </option>
-          ))}
-        </optgroup>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {/* The repo couldn't say who this was for, so Claude read the session's
+          own prompts and named a client. It's a suggestion — a human presses
+          the button. Nothing is booked to a client on a guess. */}
+      {suggestion && (
+        <button
+          className="btn mint sm"
+          disabled={busy}
+          title="Inferred from this session’s prompts. Confirm to attribute it."
+          onClick={() => void apply({ client_id: suggestion.id }, suggestion.name)}
+        >
+          ✓ {suggestion.name}?
+        </button>
       )}
-      {ventures.length > 0 && (
-        <optgroup label="Builds · internal">
-          {ventures.map((v) => (
-            <option key={v.id} value={`venture:${v.id}`}>
-              {v.name}
-            </option>
-          ))}
-        </optgroup>
-      )}
-    </select>
+      <select
+        className="inp"
+        style={{ fontSize: 12, padding: '5px 8px' }}
+        disabled={busy}
+        defaultValue=""
+        aria-label="Attribute this session to a client or build"
+        onChange={(e) => void assign(e.target.value)}
+      >
+        <option value="">{suggestion ? 'or choose…' : 'Assign…'}</option>
+        {clients.length > 0 && (
+          <optgroup label="Clients">
+            {clients.map((c) => (
+              <option key={c.id} value={`client:${c.id}`}>
+                {c.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {ventures.length > 0 && (
+          <optgroup label="Builds · internal">
+            {ventures.map((v) => (
+              <option key={v.id} value={`venture:${v.id}`}>
+                {v.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+    </div>
   );
 }
 

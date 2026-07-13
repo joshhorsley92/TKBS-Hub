@@ -38,22 +38,39 @@ export async function POST(request: Request) {
   if (!externalId) return NextResponse.json({ error: 'external_id is required' }, { status: 400 });
   if (!body?.started_at) return NextResponse.json({ error: 'started_at is required' }, { status: 400 });
 
-  // The hook authenticates with the shared sync secret, not a user session, so
-  // there's no caller identity to attribute to — resolve the person from the
-  // machine's git identity instead. A hub user posting manually is themselves.
   const supabase = auth === 'sync-secret' ? createServiceRoleClient() : auth.supabase;
 
+  // ── WHO ────────────────────────────────────────────────────────────────
+  // The hook authenticates with a shared secret, which carries NO identity.
+  // This used to fall through to DEV_USER, which meant EVERY session — Joe's,
+  // Josh's, anyone's — was logged as Joe. Silent misattribution: worse than no
+  // data, because it looks like data.
+  //
+  // The machine's git email is the answer, and `identities` already maps it —
+  // it's how commits get attributed. If it doesn't resolve we store NULL and
+  // keep the raw email, so the board can ASK. We never guess a person.
   let profileId: string | null = auth === 'sync-secret' ? null : auth.userId;
-  if (!profileId) {
-    const { data } = await supabase.from('profiles').select('id').eq('email', process.env.DEV_USER ?? '').maybeSingle();
-    profileId = data?.id ?? null;
+  const actorEmail = typeof body?.actor_email === 'string' ? body.actor_email.toLowerCase().trim() : null;
+
+  if (!profileId && actorEmail) {
+    const { data: identity } = await supabase
+      .from('identities')
+      .select('profile_id')
+      .eq('kind', 'git_email')
+      .ilike('value', actorEmail)
+      .maybeSingle();
+    profileId = identity?.profile_id ?? null;
+
+    // A person may also be identifiable by their hub login address.
+    if (!profileId) {
+      const { data: byEmail } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('email', actorEmail)
+        .maybeSingle();
+      profileId = byEmail?.id ?? null;
+    }
   }
-  if (!profileId) {
-    // Fall back to the engineer seat rather than dropping the row on the floor.
-    const { data } = await supabase.from('profiles').select('id').eq('role', 'engineer').limit(1).maybeSingle();
-    profileId = data?.id ?? null;
-  }
-  if (!profileId) return NextResponse.json({ error: 'No profile to attribute this session to' }, { status: 500 });
 
   // Attribute from the working directory, via the repo map.
   let clientId: string | null = body.client_id ?? null;
@@ -73,7 +90,14 @@ export async function POST(request: Request) {
   const row = {
     external_id: externalId,
     source: body.source === 'manual' ? 'manual' : 'claude',
+    // NULL when we couldn't identify them. The board shows it as "unknown
+    // person" and asks — it does not put the hours on someone's ledger.
     profile_id: profileId,
+    actor_raw: profileId ? null : actorEmail,
+    // A suggestion, not an attribution. Nothing sums over it; a human confirms
+    // it into client_id with one click.
+    suggested_client_id: clientId ? null : (body.suggested_client_id ?? null),
+    suggested_reason: clientId ? null : (body.suggested_reason ?? null),
     client_id: clientId,
     venture_id: ventureId,
     repo_id: repoId,

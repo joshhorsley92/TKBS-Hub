@@ -3,6 +3,7 @@ import { getPeople, getTime } from '@/lib/board';
 import { safeQuery } from '@/lib/data';
 import { DASH, fmtY, money, num } from '@/lib/broadsheet';
 import { Avatar, Chip, EmptyState } from '@/components/broadsheet/primitives';
+import type { People, TimeSession } from '@/lib/board';
 import {
   AssignSession,
   LogTimeButton,
@@ -31,6 +32,24 @@ export const dynamic = 'force-dynamic';
 // They are never summed. Doing so would double-count the same work.
 
 const HOURS = (h: number) => `${h.toFixed(1)}h`;
+
+/** Who did the work — or an honest admission that we don't know. */
+function Who({ session, people }: { session: TimeSession; people: People | null }) {
+  const person = session.profileId ? people?.byId[session.profileId] : null;
+  if (person) return <Avatar person={person} />;
+  return (
+    <Chip
+      tone="amber"
+      title={
+        session.actorRaw
+          ? `Ran under the git identity ${session.actorRaw}, which isn't mapped to anyone in the hub. Add it under Connections → Identity mappings.`
+          : 'This machine has no git identity configured, so we could not tell who was working.'
+      }
+    >
+      unknown
+    </Chip>
+  );
+}
 
 export default async function TimePage() {
   const [board, people, clients, ventures] = await Promise.all([
@@ -169,11 +188,19 @@ export default async function TimePage() {
                             {s.repoName ?? s.cwd?.split(/[\\/]/).pop() ?? DASH}
                           </td>
                           <td>
-                            <Avatar person={people?.byId[s.profileId]} />
+                            <Who session={s} people={people} />
                           </td>
                           <td className="num">{HOURS(s.workedHours)}</td>
                           <td>
-                            <AssignSession sessionId={s.id} {...options} />
+                            <AssignSession
+                              sessionId={s.id}
+                              suggestion={
+                                s.suggestedClientId && s.suggestedClientName
+                                  ? { id: s.suggestedClientId, name: s.suggestedClientName }
+                                  : null
+                              }
+                              {...options}
+                            />
                           </td>
                         </tr>
                       ))}
@@ -224,7 +251,7 @@ export default async function TimePage() {
                       )}
                     </td>
                     <td>
-                      <Avatar person={people?.byId[s.profileId]} />
+                      <Who session={s} people={people} />
                     </td>
                     <td className="num">{HOURS(s.workedHours)}</td>
                     <td className="num" style={{ color: 'var(--ink-4)' }}>
