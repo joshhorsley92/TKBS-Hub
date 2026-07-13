@@ -63,6 +63,61 @@ export default async function TimePage() {
   const claudeHours = board.sessions.filter((s) => s.source === 'claude').reduce((a, s) => a + s.workedHours, 0);
   const manualHours = board.totalHours - claudeHours;
 
+  // ── where the time went ────────────────────────────────────────────────
+  // Three kinds of answer, and they are NOT the same thing:
+  //   a client        — billable work
+  //   an internal build — a real answer: this is what TKBS costs TKBS
+  //   a gap           — we genuinely don't know, and a human must say
+  // Lumping "internal" in with "unknown" is what made settled work nag forever.
+  type Bucket = {
+    key: string;
+    label: string;
+    href: string | null;
+    hours: number;
+    labour: number | null;
+    imputed: number | null;
+    tokens: number;
+    allocated: number | null;
+  };
+
+  const grouped = new Map<string, Bucket>();
+  const totalTokens = board.sessions.reduce((a, s) => a + s.totalTokens, 0);
+
+  for (const s of board.sessions) {
+    const key = s.clientId ? `c:${s.clientId}` : s.ventureId ? `v:${s.ventureId}` : 'gap';
+    const label = s.clientName ?? s.ventureName ?? 'Not attributed yet';
+    const href = s.clientId ? `/clients/${s.clientId}` : s.ventureId ? `/builds/${s.ventureId}` : null;
+
+    const b = grouped.get(key) ?? {
+      key: key === 'gap' ? 'gap' : s.ventureId ? 'internal' : key,
+      label,
+      href,
+      hours: 0,
+      labour: null,
+      imputed: null,
+      tokens: 0,
+      allocated: null,
+    };
+    b.hours += s.workedHours;
+    b.tokens += s.totalTokens;
+    // sum(nothing known) stays null — an unknown never becomes a zero.
+    if (s.labourCost !== null) b.labour = (b.labour ?? 0) + s.labourCost;
+    if (s.imputedCost !== null) b.imputed = (b.imputed ?? 0) + s.imputedCost;
+    grouped.set(key, b);
+  }
+
+  // Real cash: each bucket's slice of the real subscription bill, by token share.
+  // Null while nobody has said what the subscription costs.
+  const buckets = [...grouped.values()]
+    .map((b) => ({
+      ...b,
+      allocated:
+        board.subscriptionMonthly !== null && totalTokens > 0
+          ? (board.subscriptionMonthly * b.tokens) / totalTokens
+          : null,
+    }))
+    .sort((a, b) => b.hours - a.hours);
+
   return (
     <>
       <div className="topline">
@@ -152,6 +207,66 @@ export default async function TimePage() {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* ── where it went ─────────────────────────────────────────── */}
+          <div className="shead">
+            <h3>Where the time went</h3>
+            <span className="sample">internal is an answer, not a gap</span>
+          </div>
+          <div className="card pad">
+            <table className="ledger">
+              <thead>
+                <tr>
+                  <th>Client / build</th>
+                  <th className="num">Hours</th>
+                  <th className="num">Labour · real</th>
+                  <th className="num">Claude · allocated · real</th>
+                  <th className="num">Claude · imputed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {buckets.map((b) => (
+                  <tr key={b.key}>
+                    <td style={{ fontWeight: 500 }}>
+                      {b.href ? (
+                        <Link href={b.href}>{b.label}</Link>
+                      ) : b.key === 'gap' ? (
+                        <Chip tone="amber">{b.label}</Chip>
+                      ) : (
+                        b.label
+                      )}
+                      {b.key === 'internal' && (
+                        <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 3 }}>
+                          Not billable to anyone — what it costs TKBS to run TKBS.
+                        </div>
+                      )}
+                    </td>
+                    <td className="num">{HOURS(b.hours)}</td>
+                    <td className={`num ${b.labour === null ? 'unk' : 'pos'}`}>{money(b.labour)}</td>
+                    <td className={`num${b.allocated === null ? ' unk' : ''}`}>{money(b.allocated)}</td>
+                    <td className={`num${b.imputed === null ? ' unk' : ''}`} style={{ color: 'var(--ink-4)' }}>
+                      {money(b.imputed)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td style={{ fontFamily: 'var(--disp)' }}>Total</td>
+                  <td className="num">{HOURS(board.totalHours)}</td>
+                  <td className={`num ${board.totalLabour === null ? 'unk' : 'pos'}`}>
+                    {money(board.totalLabour)}
+                  </td>
+                  <td className={`num${board.allocatedThisMonth === null ? ' unk' : ''}`}>
+                    {money(board.allocatedThisMonth)}
+                  </td>
+                  <td className="num unk" style={{ color: 'var(--ink-4)' }}>
+                    {money(board.totalImputed)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
 
           {/* ── unattributed ───────────────────────────────────────────── */}
