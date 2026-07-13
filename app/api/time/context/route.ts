@@ -28,7 +28,11 @@ export async function GET(request: Request) {
       .find((r) => path.includes(`/${r.name.toLowerCase()}`)) ?? null;
 
   // The repo answers it → nothing to infer, and we don't burn a Claude call.
-  if (hit?.client_id) {
+  //
+  // A venture counts as an answer, not just a client: a repo mapped to TKBS
+  // Internal is internal work, full stop. Asking "which client was this for?"
+  // about the hub's own codebase invites an invented one.
+  if (hit?.client_id || hit?.venture_id) {
     return NextResponse.json({ needsClient: false, clients: [] });
   }
 

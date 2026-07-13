@@ -53,6 +53,9 @@ export async function POST(request: Request) {
   const actorEmail = typeof body?.actor_email === 'string' ? body.actor_email.toLowerCase().trim() : null;
 
   if (!profileId && actorEmail) {
+    // The machine's GLOBAL git identity — its owner. Not the repo-local commit
+    // author, which is a different question and got Joe's hours billed at Josh's
+    // rate. See whoAmI() in the hook.
     const { data: identity } = await supabase
       .from('identities')
       .select('profile_id')
@@ -69,6 +72,17 @@ export async function POST(request: Request) {
         .ilike('email', actorEmail)
         .maybeSingle();
       profileId = byEmail?.id ?? null;
+    }
+
+    // Or by a bare first name — TKBS_USER=joe on a machine whose git identity is
+    // ambiguous. Explicit beats inferred, every time.
+    if (!profileId && /^[a-z]+$/.test(actorEmail)) {
+      const { data: byName } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('name', `${actorEmail}%`)
+        .maybeSingle();
+      profileId = byName?.id ?? null;
     }
   }
 

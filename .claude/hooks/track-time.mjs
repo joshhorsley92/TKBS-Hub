@@ -81,14 +81,27 @@ const SECRET = env('SYNC_SECRET');
  * The machine's git email is the answer, and the hub already maps it: that's how
  * commits get attributed. Same mapping, same truth.
  */
-function gitEmail(cwd) {
+function whoAmI() {
+  // An explicit answer always wins. Set TKBS_USER on a machine whose git
+  // identity is ambiguous and nothing has to be inferred at all.
+  if (process.env.TKBS_USER) return process.env.TKBS_USER.trim().toLowerCase();
+
   try {
-    const out = execFileSync('git', ['config', 'user.email'], {
-      cwd,
+    // --global ON PURPOSE.
+    //
+    // Plain `git config user.email` returns the REPO-LOCAL identity, which
+    // answers "who authors commits here" — NOT "who is sitting at this machine".
+    // Joe and Josh share a GitHub account, and Joe's Web-Hosting checkout is
+    // configured with Josh's address. Using the local value billed 53 hours of
+    // Joe's work to Josh at $200/hr — $10,758 of cost that never happened.
+    //
+    // The global identity belongs to the machine's owner, which is the person at
+    // the keyboard. That is the question we are actually asking.
+    const out = execFileSync('git', ['config', '--global', 'user.email'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return out.trim() || null;
+    return out.trim().toLowerCase() || null;
   } catch {
     return null;
   }
@@ -103,8 +116,12 @@ function askClaude(prompt, ms = 25000) {
     try {
       // `claude` is a .cmd shim on Windows; name it explicitly rather than going
       // through a shell (which would concatenate args unescaped).
-      const bin = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-      const p = spawn(bin, ['-p', '--model', 'claude-haiku-4-5'], {
+      // Node refuses to spawn a .cmd without a shell (CVE-2024-27980), and
+      // `shell: true` warns about unescaped args. Go through cmd.exe directly:
+      // no shell flag, no warning, and the .cmd shim still resolves.
+      const [bin, pre] =
+        process.platform === 'win32' ? ['cmd.exe', ['/c', 'claude']] : ['claude', []];
+      const p = spawn(bin, [...pre, '-p', '--model', 'claude-haiku-4-5'], {
         stdio: ['pipe', 'pipe', 'ignore'],
       });
       let out = '';
@@ -238,7 +255,7 @@ async function main() {
     external_id: sessionId,
     source: 'claude',
     cwd,
-    actor_email: gitEmail(cwd),
+    actor_email: whoAmI(),
     started_at: parsed.startedAt,
     ended_at: parsed.endedAt,
     worked_seconds: parsed.workedSeconds,
