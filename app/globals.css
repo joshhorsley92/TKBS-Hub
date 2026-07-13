@@ -538,3 +538,16 @@ a:hover { color: var(--mint-dark); }
 .pgrow .setland:hover { color: var(--ink); }
 .eye { all: unset; cursor: pointer; color: var(--ink-4); display: flex; padding: 4px; border-radius: 7px; flex-shrink: 0; }
 .eye:hover { color: var(--ink); background: var(--line-2); }
+
+/* ── workspace picker (sidebar footer) ───────────────────────────────────── */
+/* Three seats — Joe, Josh, Savannah — so the two-person ⇄ toggle became a menu. */
+.whoscrim { position: fixed; inset: 0; z-index: 40; }
+.whomenu { position: absolute; bottom: calc(100% + 8px); left: -4px; right: -4px; z-index: 41; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh-lg); padding: 5px; display: flex; flex-direction: column; gap: 2px; animation: pop 0.14s ease; }
+.whoitem { all: unset; cursor: pointer; display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 9px; transition: 0.13s; }
+.whoitem:hover { background: var(--line-2); }
+.whoitem.on { background: var(--mint-wash); }
+.whoitem .ava { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-family: var(--disp); font-weight: 600; font-size: 10px; color: #fff; flex-shrink: 0; }
+.wi-meta { display: flex; flex-direction: column; min-width: 0; }
+.wi-meta b { font-family: var(--disp); font-size: 12.5px; font-weight: 600; }
+.wi-meta span { font-size: 10.5px; color: var(--ink-4); }
+.wi-tag { margin-left: auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-4); background: var(--line-2); padding: 2px 6px; border-radius: 5px; white-space: nowrap; }

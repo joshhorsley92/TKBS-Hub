@@ -15,6 +15,7 @@ import {
   type Src,
   type Person,
   PERSON_COLOR,
+  PEOPLE_ORDER,
   initialsOf,
   toSrc,
   SRC_OWNER,
@@ -23,27 +24,46 @@ import { type WorkspaceProfile, mergeProfile } from './workspace';
 
 /* ── people ──────────────────────────────────────────────────────────────── */
 
-type ProfileRow = { id: string; name: string; email: string; role: 'owner' | 'engineer' };
+type ProfileRow = {
+  id: string;
+  name: string;
+  email: string | null;
+  role: 'owner' | 'engineer' | 'bookkeeper';
+  auth_user_id: string | null;
+};
 
-/** Map a profile row onto the board's two-person model. */
+/** Resolve a profile row onto one of the board's seats. */
 function personKeyOf(p: ProfileRow): PersonKey {
-  // Josh is the owner; Joe is engineering. Fall back to the email local-part so
-  // this still resolves if roles are ever edited.
+  // Role is the primary signal — it's the one field that's always set.
+  // Savannah has no email yet, so the email fallback has to tolerate null.
   if (p.role === 'owner') return 'josh';
-  if (p.email.startsWith('josh')) return 'josh';
+  if (p.role === 'bookkeeper') return 'savannah';
+  if (p.email?.startsWith('josh')) return 'josh';
+  if (p.email?.startsWith('savannah') || /savannah/i.test(p.name)) return 'savannah';
   return 'joe';
 }
 
+const ROLE_LABEL: Record<string, string> = {
+  owner: 'Owner',
+  engineer: 'Engineering',
+  bookkeeper: 'Bookkeeping',
+};
+
 export type People = {
-  byKey: Record<PersonKey, Person>;
+  /** Everyone on the board, in reading order. */
+  list: Person[];
+  /** Present only for seats that actually have a profile row. */
+  byKey: Partial<Record<PersonKey, Person>>;
   byId: Record<string, Person>;
 };
 
 const getPeopleUncached = async (): Promise<People | null> => {
-  const rows = await safeQuery<ProfileRow[]>((s) => s.from('profiles').select('id, name, email, role'));
+  const rows = await safeQuery<ProfileRow[]>((s) =>
+    s.from('profiles').select('id, name, email, role, auth_user_id'),
+  );
   if (!rows?.length) return null;
 
-  const byKey = {} as Record<PersonKey, Person>;
+  const byKey: Partial<Record<PersonKey, Person>> = {};
   const byId: Record<string, Person> = {};
 
   for (const r of rows) {
@@ -54,16 +74,23 @@ const getPeopleUncached = async (): Promise<People | null> => {
       name: r.name,
       first: r.name.split(/\s+/)[0] ?? r.name,
       initials: initialsOf(r.name),
-      role: r.role === 'owner' ? 'Owner' : 'Engineering',
+      role: ROLE_LABEL[r.role] ?? r.role,
       color: PERSON_COLOR[key],
+      // Savannah is on the board but has no auth user yet — she can be assigned
+      // work and viewed-as, she just can't sign in. See migration 0006.
+      canSignIn: Boolean(r.auth_user_id),
     };
     byKey[key] = person;
     byId[r.id] = person;
   }
 
-  // Both slots must exist for the person-switcher to work.
+  // Joe and Josh are load-bearing: the board's ownership derivation and the
+  // default workspaces assume both exist. Savannah is optional — if her profile
+  // is missing the console simply shows two seats instead of three.
   if (!byKey.joe || !byKey.josh) return null;
-  return { byKey, byId };
+
+  const list = PEOPLE_ORDER.map((k) => byKey[k]).filter((p): p is Person => Boolean(p));
+  return { list, byKey, byId };
 };
 
 /** Request-scoped: deduped across every caller in a single render. */
@@ -71,15 +98,19 @@ export const getPeople = cache(getPeopleUncached);
 
 /* ── workspaces ──────────────────────────────────────────────────────────── */
 
-export async function getWorkspaces(people: People): Promise<Record<PersonKey, WorkspaceProfile>> {
+export async function getWorkspaces(
+  people: People,
+): Promise<Partial<Record<PersonKey, WorkspaceProfile>>> {
   const rows = await safeQuery<{ profile_id: string; prefs: unknown }[]>((s) =>
     s.from('workspace_prefs').select('profile_id, prefs'),
   );
   const saved = new Map((rows ?? []).map((r) => [r.profile_id, r.prefs]));
-  return {
-    joe: mergeProfile(saved.get(people.byKey.joe.id), 'joe'),
-    josh: mergeProfile(saved.get(people.byKey.josh.id), 'josh'),
-  };
+
+  const out: Partial<Record<PersonKey, WorkspaceProfile>> = {};
+  for (const person of people.list) {
+    out[person.key] = mergeProfile(saved.get(person.id), person.key);
+  }
+  return out;
 }
 
 /* ── signals (the activity river) ────────────────────────────────────────── */

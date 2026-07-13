@@ -24,7 +24,7 @@ export function NewInitiativeButton({
   repos: Option[];
 }) {
   const router = useRouter();
-  const { me, people } = useWorkspace();
+  const { me, roster } = useWorkspace();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -32,13 +32,18 @@ export function NewInitiativeButton({
 
   const [title, setTitle] = useState('');
   const [why, setWhy] = useState('');
-  const [owner, setOwner] = useState(me);
+  // Store the profile id, not the seat key — the API wants an id and the
+  // roster is no longer a fixed pair.
+  const [owner, setOwner] = useState<string>('');
   const [lane, setLane] = useState<(typeof LANES)[number]>('Client');
   const [clientId, setClientId] = useState('');
   const [ventureId, setVentureId] = useState('');
   const [repoId, setRepoId] = useState('');
 
   useModal(open, () => setOpen(false));
+
+  const meId = roster.find((p) => p.key === me)?.id ?? '';
+  const ownerId = owner || meId;
 
   async function create() {
     if (!title.trim() || busy) return;
@@ -51,7 +56,7 @@ export function NewInitiativeButton({
         body: JSON.stringify({
           title: title.trim(),
           why: why.trim() || null,
-          owner_id: people[owner].id,
+          owner_id: ownerId,
           lane,
           client_id: clientId || null,
           venture_id: ventureId || null,
@@ -106,10 +111,14 @@ export function NewInitiativeButton({
             <div style={{ display: 'flex', gap: 20, marginTop: 14, flexWrap: 'wrap' }}>
               <div>
                 <label className="fl">Owner</label>
-                <div className="r" style={{ display: 'flex', gap: 6 }}>
-                  {(['joe', 'josh'] as const).map((o) => (
-                    <button key={o} className={`tog${owner === o ? ' on' : ''}`} onClick={() => setOwner(o)}>
-                      {people[o].first}
+                <div className="r" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {roster.map((o) => (
+                    <button
+                      key={o.key}
+                      className={`tog${ownerId === o.id ? ' on' : ''}`}
+                      onClick={() => setOwner(o.id)}
+                    >
+                      {o.first}
                     </button>
                   ))}
                 </div>
@@ -230,7 +239,7 @@ export function DecisionLogForm({ initiativeId }: { initiativeId: string }) {
 
 export function InitiativeControls({ initiative }: { initiative: Initiative }) {
   const router = useRouter();
-  const { people, peopleById } = useWorkspace();
+  const { roster, peopleById } = useWorkspace();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(initiative.blockNote ?? '');
@@ -319,14 +328,14 @@ export function InitiativeControls({ initiative }: { initiative: Initiative }) {
         >
           Nobody
         </button>
-        {(['joe', 'josh'] as const).map((k) => (
+        {roster.map((p) => (
           <button
-            key={k}
-            className={`tog${blockedKey === people[k].id ? ' on' : ''}`}
+            key={p.key}
+            className={`tog${blockedKey === p.id ? ' on' : ''}`}
             disabled={busy}
-            onClick={() => void patch({ blocked_on: people[k].id })}
+            onClick={() => void patch({ blocked_on: p.id })}
           >
-            {people[k].first}
+            {p.first}
           </button>
         ))}
         <button
@@ -358,14 +367,14 @@ export function InitiativeControls({ initiative }: { initiative: Initiative }) {
 
       <label className="fl">Owner</label>
       <div className="r" style={{ display: 'flex', gap: 6 }}>
-        {(['joe', 'josh'] as const).map((k) => (
+        {roster.map((p) => (
           <button
-            key={k}
-            className={`tog${peopleById[initiative.ownerId]?.key === k ? ' on' : ''}`}
+            key={p.key}
+            className={`tog${initiative.ownerId === p.id ? ' on' : ''}`}
             disabled={busy}
-            onClick={() => void patch({ owner_id: people[k].id })}
+            onClick={() => void patch({ owner_id: p.id })}
           >
-            {people[k].first}
+            {p.first}
           </button>
         ))}
       </div>

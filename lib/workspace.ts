@@ -93,6 +93,10 @@ export type WorkspaceProfile = {
 
 // Joe — engineering: long-form, repo-and-client-history heavy, sees everyone.
 // Josh — owner: the highlights, money forward, focused on his own plate.
+// Savannah — bookkeeper: the books ARE her job, so she lands on Money rather
+//   than Pulse, leads with the ledger, and sees everyone's work (she has to
+//   reconcile all of it). Builds and Initiatives stay in her sidebar — she has
+//   full access, they're just last.
 export const DEFAULT_PROFILES: Record<PersonKey, WorkspaceProfile> = {
   joe: {
     theme: { accent: '#00A183', font: 'Outfit', density: 'comfy' },
@@ -106,7 +110,14 @@ export const DEFAULT_PROFILES: Record<PersonKey, WorkspaceProfile> = {
     landing: 'pulse',
     ownerFilter: 'me',
     nav: ['pulse', 'money', 'pipeline', 'clients', 'init', 'builds', 'time'],
-    pulse: ['digest', 'projection', 'attention', 'calendar'],
+    pulse: ['digest', 'projection', 'signals', 'attention', 'calendar'],
+  },
+  savannah: {
+    theme: { accent: '#7C5CF0', font: 'Outfit', density: 'regular' },
+    landing: 'money',
+    ownerFilter: 'all',
+    nav: ['money', 'clients', 'pulse', 'pipeline', 'time', 'init', 'builds'],
+    pulse: ['projection', 'digest', 'attention', 'calendar'],
   },
 };
 

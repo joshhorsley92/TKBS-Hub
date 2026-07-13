@@ -3,7 +3,10 @@
 
 /* ── people ──────────────────────────────────────────────────────────────── */
 
-export type PersonKey = 'joe' | 'josh';
+export type PersonKey = 'joe' | 'josh' | 'savannah';
+
+/** Sidebar / filter / picker order. Not alphabetical — it's how the studio reads. */
+export const PEOPLE_ORDER: PersonKey[] = ['joe', 'josh', 'savannah'];
 
 export type Person = {
   key: PersonKey;
@@ -13,11 +16,21 @@ export type Person = {
   initials: string;
   role: string;
   color: string;
+  /** False until they have a Supabase auth user — on the board, can't log in. */
+  canSignIn: boolean;
 };
 
 export const PERSON_COLOR: Record<PersonKey, string> = {
-  joe: '#00A183',
-  josh: '#3B7BE0',
+  joe: '#00A183', // Electric Mint
+  josh: '#3B7BE0', // Cobalt
+  savannah: '#7C5CF0', // Violet
+};
+
+/** The chip tone that carries each person's colour. */
+export const PERSON_TONE: Record<PersonKey, 'mint' | 'blue' | 'violet'> = {
+  joe: 'mint',
+  josh: 'blue',
+  savannah: 'violet',
 };
 
 export const initialsOf = (name: string): string =>
@@ -64,8 +77,13 @@ export function toSrc(source: string | null | undefined): Src {
 }
 
 /* ── ownership ───────────────────────────────────────────────────────────── */
-// Derived from source — GitHub/repo work is Joe's; money, pipeline, client
-// comms and ops are Josh's — and overridable by an explicit assignment.
+// Derived from source, overridable by an explicit assignment.
+//
+// Savannah owns FreshBooks and keeps the books, so the obvious move was to
+// route the money lane to her. Josh's call was no: he and Savannah are equal on
+// money decisions, so the FreshBooks lane still lands on him by default — she
+// simply isn't blocked from any of it. Nothing auto-assigns to Savannah; she is
+// fully assignable, everywhere, by hand.
 export const SRC_OWNER: Record<Src, PersonKey> = {
   git: 'joe',
   freshbooks: 'josh',

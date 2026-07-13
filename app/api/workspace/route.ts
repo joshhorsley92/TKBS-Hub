@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/api-auth';
 import { mergeProfile } from '@/lib/workspace';
+import type { PersonKey } from '@/lib/broadsheet';
 
 // Per-person workspace prefs (theme / nav / Pulse layout).
 //
@@ -19,12 +20,27 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'profileId is required' }, { status: 400 });
   }
 
-  const { data: profile } = await supabase.from('profiles').select('id, role, email').eq('id', profileId).single();
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, role, email, name')
+    .eq('id', profileId)
+    .single();
   if (!profile) return NextResponse.json({ error: 'No such profile' }, { status: 404 });
 
-  // Normalise before storing so a malformed client can't persist a shape that
-  // would later break the shell.
-  const who = profile.role === 'owner' || profile.email?.startsWith('josh') ? 'josh' : 'joe';
+  // Normalise against that person's defaults before storing, so a malformed
+  // client can't persist a shape that would later break the shell. Mirrors
+  // personKeyOf() in lib/board.ts — role first, since Savannah has no email yet.
+  const who: PersonKey =
+    profile.role === 'owner'
+      ? 'josh'
+      : profile.role === 'bookkeeper'
+        ? 'savannah'
+        : profile.email?.startsWith('josh')
+          ? 'josh'
+          : /savannah/i.test(profile.name ?? '')
+            ? 'savannah'
+            : 'joe';
+
   const prefs = mergeProfile(body?.prefs, who);
 
   const { error } = await supabase

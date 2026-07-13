@@ -86,16 +86,13 @@ export default async function TimelinePage({
         {people && (
           <div className="r">
             <Link href={href(src, 'all')} className={`tog${who === 'all' ? ' on' : ''}`}>
-              Both
+              Everyone
             </Link>
-            {(['joe', 'josh'] as const).map((k) => {
-              const p = people.byKey[k];
-              return (
-                <Link key={k} href={href(src, p.id)} className={`tog${who === p.id ? ' on' : ''}`}>
-                  {p.first}
-                </Link>
-              );
-            })}
+            {people.list.map((p) => (
+              <Link key={p.key} href={href(src, p.id)} className={`tog${who === p.id ? ' on' : ''}`}>
+                {p.first}
+              </Link>
+            ))}
           </div>
         )}
       </div>

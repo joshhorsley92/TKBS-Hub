@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Person, PersonKey } from '@/lib/broadsheet';
+import { PEOPLE_ORDER, type Person, type PersonKey } from '@/lib/broadsheet';
 import {
   DEFAULT_PROFILES,
   PAGE_HREF,
@@ -31,8 +31,11 @@ const ME_KEY = 'tkbs_me_v1';
 type Ctx = {
   me: PersonKey;
   person: Person;
-  other: Person;
-  people: Record<PersonKey, Person>;
+  /** Everyone else on the board, in reading order. */
+  others: Person[];
+  /** Everyone, in reading order — for owner pickers and person filters. */
+  roster: Person[];
+  people: Partial<Record<PersonKey, Person>>;
   peopleById: Record<string, Person>;
   profile: WorkspaceProfile;
   /** Real board records (clients, builds, initiatives) for ⌘K jump-to. */
@@ -60,9 +63,9 @@ export function WorkspaceProvider({
   destinations,
   children,
 }: {
-  people: Record<PersonKey, Person>;
+  people: Partial<Record<PersonKey, Person>>;
   peopleById: Record<string, Person>;
-  initial: Record<PersonKey, WorkspaceProfile>;
+  initial: Partial<Record<PersonKey, WorkspaceProfile>>;
   destinations: Destination[];
   children: ReactNode;
 }) {
@@ -75,19 +78,23 @@ export function WorkspaceProvider({
   // render agree (avoids a hydration mismatch on the themed shell).
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(ME_KEY);
-      if (saved === 'joe' || saved === 'josh') setMe(saved);
+      const saved = localStorage.getItem(ME_KEY) as PersonKey | null;
+      // Only restore a seat that actually exists — a stale 'savannah' from
+      // before her profile existed must not wedge the console.
+      if (saved && people[saved]) setMe(saved);
     } catch {
       /* no localStorage — stay on the default */
     }
-  }, []);
+  }, [people]);
 
   const persist = useCallback(
     (who: PersonKey, next: WorkspaceProfile) => {
+      const profileId = people[who]?.id;
+      if (!profileId) return;
       void fetch('/api/workspace', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ profileId: people[who].id, prefs: next }),
+        body: JSON.stringify({ profileId, prefs: next }),
       }).catch(() => {
         /* the workspace is cosmetic — a failed save must never break the board */
       });
@@ -98,7 +105,9 @@ export function WorkspaceProvider({
   const patch = useCallback(
     (fn: (p: WorkspaceProfile) => WorkspaceProfile) => {
       setProfiles((prev) => {
-        const next = fn(prev[me]);
+        const current = prev[me];
+        if (!current) return prev;
+        const next = fn(current);
         persist(me, next);
         return { ...prev, [me]: next };
       });
@@ -114,26 +123,30 @@ export function WorkspaceProvider({
 
   const switchMe = useCallback(
     (who: PersonKey) => {
+      if (!people[who]) return;
       setMe(who);
       try {
         localStorage.setItem(ME_KEY, who);
       } catch {
         /* ignore */
       }
-      const p = profiles[who];
+      // Land on that person's home page — Savannah opens on Money, not Pulse.
+      const p = profiles[who] ?? DEFAULT_PROFILES[who];
       const landing = p.nav.includes(p.landing) ? p.landing : 'pulse';
       router.push(PAGE_HREF[landing]);
     },
-    [profiles, router],
+    [people, profiles, router],
   );
 
-  const profile = profiles[me];
+  const profile = profiles[me] ?? DEFAULT_PROFILES[me];
+  const roster = PEOPLE_ORDER.map((k) => people[k]).filter((p): p is Person => Boolean(p));
 
   const value = useMemo<Ctx>(
     () => ({
       me,
-      person: people[me],
-      other: people[me === 'joe' ? 'josh' : 'joe'],
+      person: people[me]!,
+      others: roster.filter((p) => p.key !== me),
+      roster,
       people,
       peopleById,
       profile,
@@ -145,7 +158,7 @@ export function WorkspaceProvider({
       patch,
       reset,
     }),
-    [me, people, peopleById, profile, destinations, editing, switchMe, patch, reset],
+    [me, people, roster, peopleById, profile, destinations, editing, switchMe, patch, reset],
   );
 
   return <WorkspaceCtx.Provider value={value}>{children}</WorkspaceCtx.Provider>;

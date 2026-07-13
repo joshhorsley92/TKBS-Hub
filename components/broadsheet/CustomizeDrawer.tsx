@@ -62,7 +62,7 @@ const FONTS: DisplayFont[] = ['Outfit', 'Space Grotesk', 'Newsreader'];
 const DENSITIES: Density[] = ['compact', 'regular', 'comfy'];
 
 export function CustomizeDrawer() {
-  const { me, person, other, profile, editing, setEditing, patch, reset, switchMe } = useWorkspace();
+  const { person, others, profile, editing, setEditing, patch, reset, switchMe } = useWorkspace();
   const [confirmReset, setConfirmReset] = useState(false);
 
   const setTheme = <K extends keyof typeof profile.theme>(k: K, v: (typeof profile.theme)[K]) =>
@@ -262,9 +262,11 @@ export function CustomizeDrawer() {
         </div>
 
         <div className="dw-foot">
-          <button className="btn ghost sm" onClick={() => switchMe(other.key)}>
-            Switch to {other.first}
-          </button>
+          {others.map((o) => (
+            <button key={o.key} className="btn ghost sm" onClick={() => switchMe(o.key)}>
+              {o.first}
+            </button>
+          ))}
           <button
             className="btn ghost sm"
             onClick={() => {

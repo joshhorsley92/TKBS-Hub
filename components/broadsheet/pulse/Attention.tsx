@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { Attention as Item } from '@/lib/board';
-import { SRC_LABEL } from '@/lib/broadsheet';
+import { PERSON_TONE, SRC_LABEL } from '@/lib/broadsheet';
 import { Avatar } from '../primitives';
 import { useWorkspace } from '../WorkspaceProvider';
 import { useToast } from '../Toast';
@@ -21,7 +21,7 @@ import { useToast } from '../Toast';
 // pretending to be editable.
 export function Attention({ items }: { items: Item[] }) {
   const router = useRouter();
-  const { me, people, peopleById, profile } = useWorkspace();
+  const { me, people, peopleById, profile, roster } = useWorkspace();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -34,16 +34,20 @@ export function Attention({ items }: { items: Item[] }) {
     e.stopPropagation();
     if (!item.initiativeId || busy) return;
 
-    const nextKey = item.ownerKey === 'joe' ? 'josh' : 'joe';
+    // Three seats now, so this cycles rather than toggles.
+    const i = roster.findIndex((p) => p.key === item.ownerKey);
+    const next = roster[(i + 1) % roster.length];
+    if (!next) return;
+    const nextKey = next.key;
     setBusy(item.id);
     try {
       const res = await fetch(`/api/initiatives/${item.initiativeId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ owner_id: people[nextKey].id }),
+        body: JSON.stringify({ owner_id: next.id }),
       });
       if (res.ok) {
-        toast(`Reassigned to ${people[nextKey].first}`);
+        toast(`Reassigned to ${next.first}`);
         router.refresh();
       } else {
         toast('Couldn’t reassign — the change wasn’t saved');
@@ -58,7 +62,7 @@ export function Attention({ items }: { items: Item[] }) {
       <div className="shead">
         <h3>Needs deciding</h3>
         {profile.ownerFilter === 'me' && theirs.length > 0 && (
-          <span className="sample">{theirs.length} more on {people[me === 'joe' ? 'josh' : 'joe'].first}’s plate</span>
+          <span className="sample">{theirs.length} more on the others’ plates</span>
         )}
       </div>
 
@@ -74,6 +78,7 @@ export function Attention({ items }: { items: Item[] }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {list.map((a) => {
             const owner = people[a.ownerKey];
+            if (!owner) return null;
             const canReassign = Boolean(a.initiativeId);
             return (
               // A card, not a link: it contains a button, and nesting an
@@ -99,16 +104,16 @@ export function Attention({ items }: { items: Item[] }) {
                   <p>{a.sub}</p>
                 </div>
                 <button
-                  className={`ownerchip chip ${a.ownerKey === 'josh' ? 'blue' : 'mint'}`}
+                  className={`ownerchip chip ${PERSON_TONE[a.ownerKey]}`}
                   disabled={!canReassign || busy === a.id}
                   aria-label={
                     canReassign
-                      ? `Owned by ${owner.first}. Reassign to ${owner.first === 'Joe' ? 'Josh' : 'Joe'}.`
+                      ? `Owned by ${owner.first}. Click to reassign to the next person.`
                       : `Owned by ${owner.first}, derived from source ${SRC_LABEL[a.src]}`
                   }
                   title={
                     canReassign
-                      ? `Owned by ${owner.first} — click to reassign this initiative`
+                      ? `Owned by ${owner.first} — click to cycle the owner`
                       : `Owner derived from source · ${SRC_LABEL[a.src]} → ${owner.first}`
                   }
                   style={!canReassign ? { cursor: 'default' } : undefined}

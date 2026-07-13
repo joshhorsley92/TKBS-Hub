@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BRAND_MARK, I } from './icons';
@@ -25,7 +26,8 @@ function isActive(pathname: string, href: string): boolean {
 
 export function Rail() {
   const pathname = usePathname();
-  const { person, other, profile, editing, toggleEditing, switchMe } = useWorkspace();
+  const { person, roster, profile, editing, toggleEditing, switchMe } = useWorkspace();
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="rail">
@@ -59,7 +61,9 @@ export function Rail() {
           Customize workspace
         </button>
 
-        <div className="who">
+        {/* Three seats now, so the old two-person ⇄ toggle can't express it —
+            this is a picker. Closes on blur so it never traps focus. */}
+        <div className="who" style={{ position: 'relative' }}>
           <span className="ava" style={{ background: person.color }}>
             {person.initials}
           </span>
@@ -70,12 +74,48 @@ export function Rail() {
           </div>
           <button
             className="swap"
-            aria-label={`Switch to ${other.first}’s workspace`}
-            title={`Switch to ${other.first}’s workspace`}
-            onClick={() => switchMe(other.key)}
+            aria-label="Switch workspace"
+            aria-expanded={open}
+            aria-haspopup="menu"
+            title="Switch workspace"
+            onClick={() => setOpen((o) => !o)}
           >
             ⇄
           </button>
+
+          {open && (
+            <>
+              <div className="whoscrim" onClick={() => setOpen(false)} />
+              <div className="whomenu" role="menu">
+                {roster.map((p) => (
+                  <button
+                    key={p.key}
+                    role="menuitem"
+                    className={`whoitem${p.key === person.key ? ' on' : ''}`}
+                    onClick={() => {
+                      setOpen(false);
+                      if (p.key !== person.key) switchMe(p.key);
+                    }}
+                  >
+                    <span className="ava" style={{ background: p.color }}>
+                      {p.initials}
+                    </span>
+                    <span className="wi-meta">
+                      <b>{p.first}</b>
+                      <span>{p.role}</span>
+                    </span>
+                    {/* Savannah is on the board but has no login yet — say so
+                        rather than implying she can sign in. */}
+                    {!p.canSignIn && (
+                      <span className="wi-tag" title="On the board, but no login yet">
+                        no login
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
