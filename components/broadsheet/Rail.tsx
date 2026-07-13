@@ -14,6 +14,7 @@ const PAGE_ICON: Record<PageKey, (p: React.SVGProps<SVGSVGElement>) => React.Rea
   clients: I.clients,
   builds: I.builds,
   money: I.money,
+  hours: I.clock,
   time: I.time,
 };
 

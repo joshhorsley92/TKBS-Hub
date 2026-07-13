@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/api-auth';
 
-const EDITABLE_KEYS = ['blended_hourly_rate', 'weekly_capacity_hours', 'pipeline_confidence'];
+const EDITABLE_KEYS = [
+  'blended_hourly_rate',
+  'weekly_capacity_hours',
+  'pipeline_confidence',
+  // The real monthly Claude bill. Turns notional token cost into allocated cash.
+  'claude_subscription_monthly',
+];
 
 // PATCH /api/assumptions — set a planning constant. Values are JSON; null
 // means "deliberately not set" (rendered as NOT SET, never invented).

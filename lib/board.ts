@@ -1025,3 +1025,110 @@ const getConnectionsUncached = async (): Promise<Connection[]> => {
 
 /** Request-scoped: deduped across every caller in a single render. */
 export const getConnections = cache(getConnectionsUncached);
+
+/* ── time & cost ─────────────────────────────────────────────────────────── */
+
+export type TimeSession = {
+  id: string;
+  source: string;
+  profileId: string;
+  clientId: string | null;
+  clientName: string | null;
+  ventureId: string | null;
+  ventureName: string | null;
+  repoName: string | null;
+  startedAt: string;
+  workedHours: number;
+  idleSeconds: number;
+  model: string | null;
+  totalTokens: number;
+  /** Priced at API list. NOTIONAL — Claude Code bills against a subscription. */
+  imputedCost: number | null;
+  /** worked_hours × the person's rate. REAL cash. Null if no rate on file. */
+  labourCost: number | null;
+  summary: string | null;
+  cwd: string | null;
+};
+
+export type TimeBoard = {
+  sessions: TimeSession[];
+  totalHours: number;
+  totalLabour: number | null;
+  totalImputed: number | null;
+  /** The real subscription bill. NULL until a human enters it. */
+  subscriptionMonthly: number | null;
+  /** This month's real cash, split pro-rata by tokens. NULL without the above. */
+  allocatedThisMonth: number | null;
+  unattributed: number;
+};
+
+const getTimeUncached = async (): Promise<TimeBoard> => {
+  const [rows, sub, monthly] = await Promise.all([
+    safeQuery<
+      {
+        id: string; source: string; profile_id: string; client_id: string | null;
+        venture_id: string | null; started_at: string; worked_hours: string;
+        idle_seconds: number; model: string | null; total_tokens: string;
+        imputed_cost: string | null; labour_cost: string | null; summary: string | null;
+        cwd: string | null;
+        clients: Embed<{ name: string }>; ventures: Embed<{ name: string }>; repos: Embed<{ name: string }>;
+      }[]
+    >((s) =>
+      s
+        .from('v_time_session_cost')
+        .select(
+          'id, source, profile_id, client_id, venture_id, started_at, worked_hours, idle_seconds, model, total_tokens, imputed_cost, labour_cost, summary, cwd, clients:client_id(name), ventures:venture_id(name), repos:repo_id(name)',
+        )
+        .order('started_at', { ascending: false })
+        .limit(100),
+    ),
+    safeQuery<{ value: unknown }[]>((s) =>
+      s.from('assumptions').select('value').eq('key', 'claude_subscription_monthly'),
+    ),
+    safeQuery<{ allocated_cost: string | null }[]>((s) =>
+      s.from('v_time_monthly').select('allocated_cost').gte('month', new Date().toISOString().slice(0, 7) + '-01'),
+    ),
+  ]);
+
+  const sessions: TimeSession[] = (rows ?? []).map((r) => ({
+    id: r.id,
+    source: r.source,
+    profileId: r.profile_id,
+    clientId: r.client_id,
+    clientName: one(r.clients)?.name ?? null,
+    ventureId: r.venture_id,
+    ventureName: one(r.ventures)?.name ?? null,
+    repoName: one(r.repos)?.name ?? null,
+    startedAt: r.started_at,
+    workedHours: Number(r.worked_hours) || 0,
+    idleSeconds: r.idle_seconds,
+    model: r.model,
+    totalTokens: Number(r.total_tokens) || 0,
+    imputedCost: numOrNull(r.imputed_cost),
+    labourCost: numOrNull(r.labour_cost),
+    summary: r.summary,
+    cwd: r.cwd,
+  }));
+
+  // sum(empty) is unknown, not zero — the same rule the money ledger follows.
+  const sum = (vals: (number | null)[]): number | null => {
+    const known = vals.filter((v): v is number => v !== null);
+    return known.length ? known.reduce((a, b) => a + b, 0) : null;
+  };
+
+  const raw = sub?.[0]?.value;
+  const subscription = raw === null || raw === undefined ? null : Number(raw);
+
+  return {
+    sessions,
+    totalHours: sessions.reduce((s, x) => s + x.workedHours, 0),
+    totalLabour: sum(sessions.map((s) => s.labourCost)),
+    totalImputed: sum(sessions.map((s) => s.imputedCost)),
+    subscriptionMonthly: Number.isFinite(subscription) ? subscription : null,
+    allocatedThisMonth: sum((monthly ?? []).map((m) => numOrNull(m.allocated_cost))),
+    unattributed: sessions.filter((s) => !s.clientId && !s.ventureId).length,
+  };
+};
+
+/** Request-scoped: deduped across every caller in a single render. */
+export const getTime = cache(getTimeUncached);

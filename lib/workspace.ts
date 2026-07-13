@@ -8,9 +8,9 @@ import type { PersonKey } from './broadsheet';
 
 /* ── pages ───────────────────────────────────────────────────────────────── */
 
-export type PageKey = 'pulse' | 'builds' | 'clients' | 'init' | 'time' | 'pipeline' | 'money';
+export type PageKey = 'pulse' | 'builds' | 'clients' | 'init' | 'time' | 'pipeline' | 'money' | 'hours';
 
-export const ALL_PAGES: PageKey[] = ['pulse', 'init', 'pipeline', 'clients', 'builds', 'money', 'time'];
+export const ALL_PAGES: PageKey[] = ['pulse', 'init', 'pipeline', 'clients', 'builds', 'money', 'hours', 'time'];
 
 export const PAGE_LABEL: Record<PageKey, string> = {
   pulse: 'Pulse',
@@ -19,6 +19,7 @@ export const PAGE_LABEL: Record<PageKey, string> = {
   clients: 'Clients',
   builds: 'Builds',
   money: 'Money',
+  hours: 'Time',
   time: 'Timeline',
 };
 
@@ -29,6 +30,7 @@ export const PAGE_HREF: Record<PageKey, string> = {
   clients: '/clients',
   builds: '/builds',
   money: '/money',
+  hours: '/time',
   time: '/timeline',
 };
 
@@ -102,21 +104,21 @@ export const DEFAULT_PROFILES: Record<PersonKey, WorkspaceProfile> = {
     theme: { accent: '#00A183', font: 'Outfit', density: 'comfy' },
     landing: 'pulse',
     ownerFilter: 'all',
-    nav: ['pulse', 'builds', 'clients', 'init', 'time', 'pipeline', 'money'],
+    nav: ['pulse', 'builds', 'clients', 'init', 'time', 'hours', 'pipeline', 'money'],
     pulse: ['digest', 'signals', 'attention', 'initiatives', 'calendar', 'projection'],
   },
   josh: {
     theme: { accent: '#3B7BE0', font: 'Space Grotesk', density: 'compact' },
     landing: 'pulse',
     ownerFilter: 'me',
-    nav: ['pulse', 'money', 'pipeline', 'clients', 'init', 'builds', 'time'],
+    nav: ['pulse', 'money', 'hours', 'pipeline', 'clients', 'init', 'builds', 'time'],
     pulse: ['digest', 'projection', 'signals', 'attention', 'calendar'],
   },
   savannah: {
     theme: { accent: '#7C5CF0', font: 'Outfit', density: 'regular' },
     landing: 'money',
     ownerFilter: 'all',
-    nav: ['money', 'clients', 'pulse', 'pipeline', 'time', 'init', 'builds'],
+    nav: ['money', 'hours', 'clients', 'pulse', 'pipeline', 'time', 'init', 'builds'],
     pulse: ['projection', 'digest', 'attention', 'calendar'],
   },
 };
